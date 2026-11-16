@@ -74,6 +74,7 @@ export function ToastProvider({ children, max = 3 }: ToastProviderProps) {
       {children}
       <div
         className="pointer-events-none fixed inset-x-0 top-0 z-[1000] flex flex-col items-center gap-2 px-4 pt-[max(12px,env(safe-area-inset-top))]"
+        role="region"
         aria-label="Notificaciones"
       >
         <AnimatePresence initial={false}>

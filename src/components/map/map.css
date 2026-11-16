@@ -57,6 +57,10 @@
 .iv-map .leaflet-control-attribution a {
   color: rgb(255 255 255 / 0.7);
   text-decoration: none;
+  /* Área táctil de 24 px de alto sin cambiar la apariencia (padding compensado con margen). */
+  display: inline-block;
+  padding: 4px 0;
+  margin: -4px 0;
 }
 .iv-map .leaflet-control-attribution a:hover,
 .iv-map .leaflet-control-attribution a:focus-visible {

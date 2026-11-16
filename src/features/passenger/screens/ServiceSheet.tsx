@@ -74,7 +74,6 @@ export function ServiceSheet() {
             type="button"
             onClick={s.openOptions}
             className="flex min-h-11 w-full items-center gap-2.5 rounded-full px-1 text-left text-[14px] text-fg-80 transition-colors hover:text-fg"
-            aria-label={`Pago y opciones: ${PAYMENT_LABEL[options.payment]}, ${scheduleLabel(options.scheduledFor)}${options.note ? ', con nota' : ''}. Cambiar`}
             data-testid="options-row"
           >
             <PayIcon size={18} className="shrink-0 text-ivancar-yellow" />
@@ -88,10 +87,11 @@ export function ServiceSheet() {
               <>
                 <span aria-hidden className="text-fg-55">·</span>
                 <IconNote size={15} className="shrink-0" />
+                <span className="sr-only">con nota</span>
               </>
             )}
             <span className="ml-auto inline-flex items-center gap-0.5 font-semibold text-ivancar-yellow">
-              Cambiar
+              Cambiar<span className="sr-only"> pago y opciones</span>
               <IconChevronRight size={16} />
             </span>
           </button>
@@ -147,7 +147,7 @@ export function ServiceSheet() {
                   <ServiceIcon service={sv.id} size={56} muted={!active} className="shrink-0" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[16px] font-bold">{sv.name}</span>
-                    <span className="block truncate text-[13px] text-fg-65">
+                    <span className="line-clamp-2 block text-[13px] text-fg-65">
                       Llega en {etas[sv.id] ?? '—'} min · {sv.capacity_label}
                     </span>
                   </span>

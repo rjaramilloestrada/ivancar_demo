@@ -1,11 +1,33 @@
 import { fileURLToPath, URL } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // GitHub Pages sirve el sitio en https://<usuario>.github.io/ivancar_demo/
 const BASE = '/ivancar_demo/';
+
+/** Precarga Inter latin (peso variable normal) para evitar el salto de layout por font swap. */
+function preloadInter(): Plugin {
+  return {
+    name: 'preload-inter-latin',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        const file = Object.keys(ctx.bundle ?? {}).find((f) => /inter-latin-wght-normal-.*\.woff2$/.test(f));
+        if (!file) return [];
+        return [
+          {
+            tag: 'link',
+            attrs: { rel: 'preload', as: 'font', type: 'font/woff2', crossorigin: '', href: `${BASE}${file}` },
+            injectTo: 'head-prepend',
+          },
+        ];
+      },
+    },
+  };
+}
 
 export default defineConfig({
   base: BASE,
@@ -15,6 +37,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
+    preloadInter(),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'script-defer',
@@ -43,7 +66,16 @@ export default defineConfig({
         // Shell de la app: JS, CSS, HTML, fuentes, íconos y las imágenes optimizadas.
         globPatterns: ['**/*.{js,css,html,woff2,svg,png,webp}'],
         // El logo original (530 KB) no se precachea; la UI usa la versión WebP.
-        globIgnores: ['**/img/ivancarlogo.png', '**/img/icono.png', '**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese}-*.woff2'],
+        globIgnores: [
+          '**/img/ivancarlogo.png',
+          '**/img/icono.png',
+          // Fotos de secciones que no están en la ruta inicial: se piden por red al usarse.
+          '**/img/hero-*.webp',
+          '**/img/corporativo-*.webp',
+          '**/img/conductores-*.webp',
+          // Alfabetos que casi no se usan (latin-ext también): se cargan por red si hacen falta.
+          '**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese,latin-ext}-*.woff2',
+        ],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
         runtimeCaching: [

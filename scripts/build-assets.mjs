@@ -9,7 +9,7 @@
  *   public/img/hero-1200.webp, hero-640.webp      foto hero (original 6016 px)
  *   public/img/corporativo-1200.webp
  *   public/img/conductores-800.webp
- *   public/img/ivancarlogo-700.webp                logo liviano para UI
+ *   public/img/ivancarlogo-220.webp, -440.webp     logo liviano para UI (srcSet 1x/2x)
  *   public/icons/icon-192.png, icon-512.png        ícono PWA "any"
  *   public/icons/maskable-512.png                  ícono PWA "maskable"
  *   public/icons/apple-touch-icon-180.png          iOS
@@ -97,8 +97,10 @@ await webp('conductores.png', 'conductores-800.webp', 800, 80);
 
 {
   const src = await ensureSource('ivancarlogo.png');
-  const info = await sharp(src).resize({ width: 700 }).webp({ quality: 90, alphaQuality: 100 }).toFile(join(IMG, 'ivancarlogo-700.webp'));
-  console.log(`✓ img/ivancarlogo-700.webp ${info.width}×${info.height} ${(info.size / 1024).toFixed(0)} KB`);
+  for (const w of [220, 440]) {
+    const info = await sharp(src).resize({ width: w }).webp({ quality: 90, alphaQuality: 100 }).toFile(join(IMG, `ivancarlogo-${w}.webp`));
+    console.log(`✓ img/ivancarlogo-${w}.webp ${info.width}×${info.height} ${(info.size / 1024).toFixed(0)} KB`);
+  }
 }
 
 await icon('icon-192.png', 192, { tile: 'outlined' });
