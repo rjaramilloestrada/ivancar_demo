@@ -1,0 +1,254 @@
+/*
+ * Capa de animación IVANCAR (components/fx). Solo se animan transform y opacity:
+ * todo corre en el compositor y no provoca layout por frame.
+ * Con prefers-reduced-motion cada efecto queda en una versión estática.
+ */
+
+/* ------------------------------------------------------------ Radar */
+.iv-radar {
+  position: relative;
+  width: var(--radar-size, 220px);
+  height: var(--radar-size, 220px);
+  pointer-events: none;
+  contain: strict;
+}
+.iv-radar__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid rgb(246 201 14 / 0.75);
+  background: radial-gradient(circle, rgb(246 201 14 / 0) 55%, rgb(246 201 14 / 0.14) 100%);
+  opacity: 0;
+  transform: scale(0.08);
+  animation: iv-radar-ring var(--radar-period, 2.4s) cubic-bezier(0.22, 0.61, 0.36, 1) infinite;
+  will-change: transform, opacity;
+}
+.iv-radar__sweep {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: conic-gradient(from 0deg, rgb(246 201 14 / 0.32), rgb(246 201 14 / 0) 70deg, rgb(246 201 14 / 0) 360deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0, #000 62%, transparent 71%);
+  mask-image: radial-gradient(circle, #000 0, #000 62%, transparent 71%);
+  animation: iv-radar-sweep 2.8s linear infinite;
+  will-change: transform;
+}
+.iv-radar__core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 9999px;
+  background: #f6c90e;
+  box-shadow: 0 0 0 3px #050505, 0 0 18px 4px rgb(246 201 14 / 0.55);
+}
+@keyframes iv-radar-ring {
+  0% {
+    transform: scale(0.08);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+@keyframes iv-radar-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Marcador Leaflet: centrado en la coordenada, por debajo de los demás marcadores. */
+.iv-radar-marker {
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------- Pulso de alerta */
+.iv-pulse-alert {
+  position: relative;
+  isolation: isolate;
+}
+.iv-pulse-alert__edge,
+.iv-pulse-alert__glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.iv-pulse-alert__edge {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pulse-color, #f6c90e) 70%, transparent);
+}
+.iv-pulse-alert__glow {
+  box-shadow: inset 0 0 0 1.5px var(--pulse-color, #f6c90e), 0 0 26px 1px color-mix(in srgb, var(--pulse-color, #f6c90e) 50%, transparent),
+    inset 0 0 18px color-mix(in srgb, var(--pulse-color, #f6c90e) 14%, transparent);
+  opacity: 0.15;
+  animation: iv-pulse-glow 1.4s ease-in-out infinite;
+  will-change: opacity;
+}
+@keyframes iv-pulse-glow {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  45% {
+    opacity: 1;
+  }
+}
+
+/* ------------------------------------------------- Brillo de entrada */
+.iv-sheen {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+.iv-sheen::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 60%;
+  background: linear-gradient(100deg, transparent 0%, rgb(246 201 14 / 0.22) 45%, rgb(255 255 255 / 0.18) 50%, rgb(246 201 14 / 0.22) 55%, transparent 100%);
+  transform: translateX(-120%);
+  animation: iv-sheen 1.1s cubic-bezier(0.16, 1, 0.3, 1) 0.15s 1 both;
+}
+@keyframes iv-sheen {
+  to {
+    transform: translateX(220%);
+  }
+}
+
+/* --------------------------------------------------------- Splash */
+.iv-splash__beam {
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: 0;
+  width: 46%;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgb(255 236 150 / 0.0) 20%,
+    rgb(255 244 200 / 0.95) 50%,
+    rgb(255 236 150 / 0.0) 80%,
+    transparent 100%
+  );
+  transform: translateX(-120%) skewX(-18deg);
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iv-radar__ring {
+    animation: none;
+    opacity: 0.35;
+  }
+  .iv-radar__ring:nth-child(1) {
+    transform: scale(0.45);
+  }
+  .iv-radar__ring:nth-child(2) {
+    transform: scale(0.75);
+    opacity: 0.2;
+  }
+  .iv-radar__ring:nth-child(n + 3) {
+    transform: scale(1);
+    opacity: 0.1;
+  }
+  .iv-radar__sweep {
+    animation: none;
+    opacity: 0;
+  }
+  .iv-pulse-alert__glow {
+    animation: none;
+    opacity: 0.7;
+  }
+  .iv-sheen::after {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* --------------------------------------------------- Número animado */
+.iv-num {
+  display: inline-block;
+  /* filas compactas: el giro recorre menos y el recorte queda ajustado al dígito */
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.iv-num__chars {
+  display: inline;
+  user-select: none;
+}
+.iv-num__slot {
+  position: relative;
+  display: inline-block;
+  /* clip-path (no overflow) para no mover la línea base del texto */
+  clip-path: inset(0 -0.15em);
+}
+.iv-num__ghost {
+  visibility: hidden;
+}
+/* Solo mientras gira: bordes superior e inferior difuminados (máscara estática). */
+.iv-num__slot--roll {
+  -webkit-mask-image: linear-gradient(transparent 0%, #000 20%, #000 82%, transparent 100%);
+  mask-image: linear-gradient(transparent 0%, #000 20%, #000 82%, transparent 100%);
+}
+.iv-num__ghost::before,
+.iv-num__char::before {
+  content: attr(data-ch);
+}
+.iv-num__col {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  text-align: center;
+  will-change: transform;
+}
+.iv-num__col::before {
+  /* 0-9 tres veces, una cifra por línea (alto de fila = line-height heredado) */
+  content: '0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9\A 0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9\A 0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9';
+  white-space: pre;
+}
+.iv-num__char {
+  display: inline-block;
+  white-space: pre;
+}
+.iv-num--enter {
+  animation: iv-num-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes iv-num-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.35em);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .iv-num--enter {
+    animation: none;
+  }
+}
+
+/* --------------------------------------------------------- Llegada */
+.iv-arrival-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid rgb(246 201 14 / 0.8);
+  opacity: 0;
+  transform: scale(0.45);
+  animation: iv-radar-ring 1.3s cubic-bezier(0.22, 0.61, 0.36, 1) 0.15s 3 both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .iv-arrival-ring {
+    display: none;
+  }
+}
