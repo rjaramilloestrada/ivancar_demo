@@ -6,6 +6,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ToastProvider } from '@/components/ui/Toast';
+import { whenInterReady } from '@/lib/fonts';
+
+// Pide Inter de inmediato (está precargada): el sheet espera a tenerla para medir.
+void whenInterReady();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

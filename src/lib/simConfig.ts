@@ -49,6 +49,16 @@ export function simSpeed(loc: Pick<Location, 'search' | 'hash'> | undefined = gl
   return Number.isFinite(n) && n >= 1 ? Math.min(20, n) : 1;
 }
 
+/**
+ * true si la URL trae `sim` (modo de prueba acelerado). Las pruebas lo usan también para
+ * saltar lo que es solo presentación (splash y zoom de entrada del mapa).
+ */
+export function hasSimParam(loc: Pick<Location, 'search' | 'hash'> | undefined = globalThis.location): boolean {
+  if (!loc) return false;
+  const q = loc.hash.indexOf('?');
+  return new URLSearchParams(loc.search).has('sim') || (q >= 0 && new URLSearchParams(loc.hash.slice(q + 1)).has('sim'));
+}
+
 /** Tiempos efectivos (divididos por el factor de aceleración). */
 export function simTimings(speed = simSpeed()): SimTimings {
   const out = {} as SimTimings;

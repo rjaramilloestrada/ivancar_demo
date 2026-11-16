@@ -1,17 +1,22 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { MapView, type MapViewHandle } from '@/components/map';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrivalBanner } from '@/components/fx/ArrivalBanner';
+import { Confetti, type ConfettiHandle } from '@/components/fx/Confetti';
+import { InstallPrompt } from '@/components/fx/InstallPrompt';
+import { Splash, useSplashOnce } from '@/components/fx/Splash';
+import type { MapViewHandle } from '@/components/map/MapView';
+import { MapBackdrop } from '@/components/map/MapBackdrop';
 import { BottomSheet, type SheetSnap } from '@/components/sheet/BottomSheet';
 import { useToast } from '@/components/ui';
 import { initAnalytics, track } from '@/lib/analytics';
 import { usePeerOnline } from '@/lib/channel';
 import { useAddress } from '@/lib/geocode';
 import { getRoute } from '@/lib/routing';
+import { hasSimParam } from '@/lib/simConfig';
 import { map as mapTokens } from '@/theme/tokens';
-import { routeKey, useRide, type Step } from '@/store/rideStore';
+import { rideEvents, routeKey, useRide, type Step } from '@/store/rideStore';
 import type { LatLng } from '@/types';
 import { ChatPanel } from './ChatPanel';
 import { markAppReady } from './hooks';
-import { MapLayers } from './MapLayers';
 import { AssignedSheet } from './screens/AssignedSheet';
 import { DestinationSheet } from './screens/DestinationSheet';
 import { HistorySheet } from './screens/HistorySheet';
@@ -37,7 +42,12 @@ const SNAP: Record<Step, SheetSnap> = {
   rating: 'full',
   history: 'full',
 };
-const HALF: Partial<Record<Step, number>> = { home: 0.55, service: 0.56, assigned: 0.52, inTrip: 0.5, searching: 0.5 };
+// 'assigned': a media altura deben verse completos Llamar / Chat / Cancelar desde 360×740.
+const HALF: Partial<Record<Step, number>> = { home: 0.55, service: 0.56, assigned: 0.6, inTrip: 0.5, searching: 0.5 };
+
+// Leaflet y las capas del mapa llegan en un chunk aparte, después del primer pintado.
+const loadMap = () => import('./PassengerMap');
+const PassengerMap = lazy(loadMap);
 
 /** Zona de cobertura del demo (Guayaquil, Samborondón, Vía a la Costa) con holgura. */
 const inServiceArea = ([lat, lng]: LatLng) => lat > -2.4 && lat < -1.9 && lng > -80.2 && lng < -79.7;
@@ -58,6 +68,36 @@ export default function PassengerApp() {
 
   const centralOnline = usePeerOnline({ intervalMs: 2000, timeoutMs: 5000 });
   useRideSimulation({ centralOnline });
+
+  /* ------------------------------------------------- Capa de animación (fx) */
+  // Splash una vez por sesión, encima de la app (no la retrasa). No en pruebas (?sim=)
+  // ni dentro del teléfono de #/demo, donde estorbaría la presentación.
+  const splash = useSplashOnce();
+  const [splashAllowed] = useState(() => !hasSimParam() && window.self === window.top);
+  const confetti = useRef<ConfettiHandle>(null);
+  const [installOpen, setInstallOpen] = useState(false);
+  useEffect(
+    () =>
+      rideEvents.on((e) => {
+        // Confetti amarillo al enviar una calificación de 4 o 5 estrellas.
+        if (e.type === 'rated' && e.rating != null && e.rating >= 4) confetti.current?.fire({ origin: { x: 0.5, y: 0.9 }, count: 80 });
+        // Prompt de instalación: solo tras completar un viaje, ya de vuelta en inicio.
+        if (e.type === 'rated') setTimeout(() => useRide.getState().step === 'home' && setInstallOpen(true), 2600);
+        // Nunca durante un pedido.
+        if (e.type === 'requested') setInstallOpen(false);
+      }),
+    [],
+  );
+  useEffect(() => {
+    if (step !== 'home' && step !== 'history') setInstallOpen(false);
+  }, [step]);
+
+  // Aviso "Tu IVANCAR llegó" (con vibración en Android), una vez por viaje.
+  const ride = useRide((s) => s.ride);
+  const unit = useRide((s) => s.unit);
+  const arrivedNow = step === 'assigned' && ride?.status === 'arrived';
+  const [arrivalSeen, setArrivalSeen] = useState<string | null>(null);
+  const arrivalOpen = arrivedNow && !!ride && arrivalSeen !== ride.id;
 
   useEffect(() => {
     initAnalytics();
@@ -86,7 +126,19 @@ export default function PassengerApp() {
   const pickupAddress = useAddress(pinMoving ? null : pinLL);
   const userMoved = useRef(false);
   const [geo, setGeo] = useState<GeoStatus>('pending');
-  const initialCenter = useMemo<LatLng>(() => (pickup ? [pickup.lat, pickup.lng] : mapTokens.defaultCenter), []);
+  // Vista con la que nace el mapa. Si la geolocalización llega antes de que el mapa
+  // (chunk diferido) exista, se usa como vista inicial.
+  const [startView, setStartView] = useState<{ center: LatLng; zoom: number }>(() => ({
+    center: pickup ? [pickup.lat, pickup.lng] : mapTokens.defaultCenter,
+    zoom: mapTokens.defaultZoom + (pickup ? 1 : 0),
+  }));
+  // Zoom de entrada desde Guayaquil completo: solo al abrir sin pedido en curso (y no en pruebas).
+  const [intro] = useState(() => !pickup && useRide.getState().step === 'home' && !hasSimParam());
+  // El chunk del mapa se pide ya (en paralelo); se monta cuando el sheet midió su alto,
+  // para que el mapa nazca con los insets correctos y sin saltos.
+  useEffect(() => {
+    void loadMap();
+  }, []);
   // El pin solo emite su posición inicial la primera vez (sin recogida guardada).
   const firstPin = useRef(!pickup);
 
@@ -118,7 +170,9 @@ export default function PassengerApp() {
           return;
         }
         setGeo('granted');
-        if (!userMoved.current && useRide.getState().step === 'home') mapRef.current?.flyTo(ll, 16);
+        if (userMoved.current || useRide.getState().step !== 'home') return;
+        if (mapRef.current) mapRef.current.flyTo(ll, 16);
+        else setStartView({ center: ll, zoom: 16 });
       },
       () => alive && setGeo('denied'),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
@@ -184,31 +238,34 @@ export default function PassengerApp() {
       data-central={centralOnline ? 'online' : 'offline'}
       data-testid="passenger-app"
     >
-      <MapView
-        ref={mapRef}
-        center={initialCenter}
-        zoom={mapTokens.defaultZoom + (pickup ? 1 : 0)}
-        aria-label={step === 'home' ? 'Mapa: mueve el mapa para elegir el punto de recogida' : 'Mapa del viaje'}
-        insets={{ top: TOP_CHROME, bottom: sheetH }}
-      >
-        <MapLayers
-          pickupEmitInitial={firstPin.current}
-          onPickupMoveStart={() => setPinMoving(true)}
-          onPickupMoveEnd={(ll, user) => {
-            firstPin.current = false;
-            if (user) userMoved.current = true;
-            setPinLL(ll);
-            setPinMoving(false);
-          }}
-          pickupAddress={pinMoving ? null : pickupAddress}
-          onDestMoveStart={() => setDestMoving(true)}
-          onDestMoveEnd={(ll) => {
-            setDestLL(ll);
-            setDestMoving(false);
-          }}
-          destAddress={destAddress}
-        />
-      </MapView>
+      <MapBackdrop />
+      {sheetH > 0 && (
+        <Suspense fallback={null}>
+          <PassengerMap
+            ref={mapRef}
+            center={startView.center}
+            zoom={startView.zoom}
+            intro={intro}
+            aria-label={step === 'home' ? 'Mapa: mueve el mapa para elegir el punto de recogida' : 'Mapa del viaje'}
+            insets={{ top: TOP_CHROME, bottom: sheetH }}
+            pickupEmitInitial={firstPin.current}
+            onPickupMoveStart={() => setPinMoving(true)}
+            onPickupMoveEnd={(ll, user) => {
+              firstPin.current = false;
+              if (user) userMoved.current = true;
+              setPinLL(ll);
+              setPinMoving(false);
+            }}
+            pickupAddress={pinMoving ? null : pickupAddress}
+            onDestMoveStart={() => setDestMoving(true)}
+            onDestMoveEnd={(ll) => {
+              setDestLL(ll);
+              setDestMoving(false);
+            }}
+            destAddress={destAddress}
+          />
+        </Suspense>
+      )}
 
       <TopBar />
 
@@ -241,6 +298,20 @@ export default function PassengerApp() {
       </SheetSlotsContext>
 
       <ChatPanel />
+
+      {unit && (
+        <ArrivalBanner
+          open={arrivalOpen}
+          plate={unit.vehicle.plate}
+          vehicle={`${unit.vehicle.make} ${unit.vehicle.model} ${unit.vehicle.color.toLowerCase()}`}
+          driver={unit.display_name}
+          autoHideMs={4500}
+          onClose={() => setArrivalSeen(ride?.id ?? null)}
+        />
+      )}
+      <InstallPrompt open={installOpen && step === 'home'} onClose={() => setInstallOpen(false)} />
+      <Confetti ref={confetti} />
+      {splash.show && splashAllowed && <Splash onDone={splash.done} />}
     </main>
   );
 }

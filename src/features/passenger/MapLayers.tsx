@@ -1,12 +1,6 @@
 import { useRef } from 'react';
-import {
-  AnimatedCar,
-  DestinationMarker,
-  DraggablePin,
-  PickupMarker,
-  RouteLine,
-  type RouteLineHandle,
-} from '@/components/map';
+import { AnimatedCar, DestinationMarker, DraggablePin, PickupMarker, RouteLine, type RouteLineHandle } from '@/components/map';
+import { RadarPulseMarker } from '@/components/fx/RadarPulse';
 import { FleetLayer } from '@/components/map/FleetLayer';
 import type { AddressState } from '@/lib/geocode';
 import { phaseProgress, useRide } from '@/store/rideStore';
@@ -93,7 +87,8 @@ export function MapLayers(p: MapLayersProps) {
         {route && <RouteLine key="route-trip" path={route.path} />}
         {pickupLL && <PickupMarker position={pickupLL} label={step === 'searching' ? undefined : 'Recogida'} />}
         {destLL && <DestinationMarker position={destLL} label={destination?.label} />}
-        {/* Bloque 5: radar de búsqueda sobre la recogida (data-searching en el contenedor). */}
+        {/* Radar de búsqueda: ondas amarillas desde la recogida mientras se evalúan unidades. */}
+        {step === 'searching' && pickupLL && <RadarPulseMarker position={pickupLL} size={240} />}
       </>
     );
   }

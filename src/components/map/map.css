@@ -26,10 +26,13 @@
   background: transparent;
 }
 
-/* Controles por debajo/encima de lo que tapa la UI (bottom sheet, barra superior). */
+/* Controles por debajo/encima de lo que tapa la UI (bottom sheet, barra superior).
+   Abajo se sube con transform (no con bottom) para que seguir al sheet no cuente como
+   salto de layout. */
 .iv-map .leaflet-bottom {
-  bottom: var(--map-inset-bottom, 0px);
-  transition: bottom 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  bottom: 0;
+  transform: translateY(calc(-1 * var(--map-inset-bottom, 0px)));
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .iv-map .leaflet-top {
   top: var(--map-inset-top, 0px);

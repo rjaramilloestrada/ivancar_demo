@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { ServiceIcon } from '@/components/services/ServiceIcon';
 import { Button, Eyebrow, useToast } from '@/components/ui';
 import { haversine } from '@/lib/geo';
@@ -27,7 +28,7 @@ export function SearchingSheet({ centralOnline }: { centralOnline: boolean }) {
   const expected = manual ? T.searchManualTimeoutMs : centralOnline ? T.searchCentralTimeoutMs : T.searchAutoMs;
   const progress = Math.min(0.95, (now - startedAt) / (expected + 600));
 
-  // Unidades disponibles a menos de 6 km (contador; el Bloque 5 lo anima con el radar).
+  // Unidades disponibles a menos de 6 km: el contador sube mientras el radar barre el mapa.
   const nearby = useMemo(
     () => fleet.filter((u) => u.status === 'available' && haversine([ride.pickup_lat, ride.pickup_lng], toLatLng(u)) < 6000).length,
     [ride.pickup_lat, ride.pickup_lng],
@@ -45,8 +46,8 @@ export function SearchingSheet({ centralOnline }: { centralOnline: boolean }) {
             title="Buscando tu unidad"
             subtitle={
               <span aria-live="polite">
-                Revisando unidades cercanas · <span className="tabular-nums font-semibold text-fg-80" data-testid="units-evaluated">{evaluated}</span> de{' '}
-                {nearby}
+                Revisando unidades cercanas ·{' '}
+                <AnimatedNumber value={evaluated} duration={420} className="font-semibold text-fg-80" data-testid="units-evaluated" /> de {nearby}
               </span>
             }
           />

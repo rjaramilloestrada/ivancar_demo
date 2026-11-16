@@ -51,7 +51,7 @@ export function DraggablePin({
   className,
 }: DraggablePinProps) {
   const map = useMap();
-  const { handle, internalMove, reduceMotion } = useMapView();
+  const { handle, internalMove, introActive, reduceMotion } = useMapView();
   const [state, setState] = useState<PinState>('idle');
   const stateRef = useRef<PinState>('idle');
   const lastGesture = useRef(0);
@@ -96,11 +96,17 @@ export function DraggablePin({
     map.on('dragstart', onDragStart);
     map.on('moveend', onEnd);
 
-    if (emitInitial) {
+    const emit = () => {
       const c = handle.getVisibleCenter();
       if (c) cbs.current.onMoveEnd?.(c, { user: false });
+    };
+    // Con entrada animada, la posición inicial es la del final del vuelo.
+    if (emitInitial) {
+      if (introActive.current) map.once('iv:introend', emit);
+      else emit();
     }
     return () => {
+      map.off('iv:introend', emit);
       el.removeEventListener('pointerdown', mark);
       el.removeEventListener('wheel', mark);
       el.removeEventListener('touchstart', mark);
@@ -110,7 +116,7 @@ export function DraggablePin({
       map.off('moveend', onEnd);
     };
     // emitInitial solo importa al montar.
-  }, [map, handle, internalMove]);
+  }, [map, handle, internalMove, introActive]);
 
   // Tras la caída, volver a idle.
   useEffect(() => {
@@ -135,12 +141,15 @@ export function DraggablePin({
       data-pin-state={state}
       className={cn(
         'pointer-events-none absolute z-[5]',
-        !reduceMotion && 'transition-[top,left] duration-[350ms] ease-[cubic-bezier(0.16,1,0.3,1)]',
+        !reduceMotion && 'transition-[translate] duration-[350ms] ease-[cubic-bezier(0.16,1,0.3,1)]',
         className,
       )}
+      // Centro del contenedor + desplazamiento por los insets, con translate (no top/left):
+      // seguir al sheet no cuenta como salto de layout.
       style={{
-        left: 'calc(var(--map-inset-left, 0px) + (100% - var(--map-inset-left, 0px) - var(--map-inset-right, 0px)) / 2)',
-        top: 'calc(var(--map-inset-top, 0px) + (100% - var(--map-inset-top, 0px) - var(--map-inset-bottom, 0px)) / 2)',
+        left: '50%',
+        top: '50%',
+        translate: 'calc((var(--map-inset-left, 0px) - var(--map-inset-right, 0px)) / 2) calc((var(--map-inset-top, 0px) - var(--map-inset-bottom, 0px)) / 2)',
         width: 0,
         height: 0,
       }}
@@ -152,10 +161,7 @@ export function DraggablePin({
         transition={headTransition}
       />
       <span
-        className={cn(
-          'absolute left-0 top-0 block size-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full',
-          yellow ? 'bg-ivancar-yellow' : 'bg-white',
-        )}
+        className={cn('absolute left-0 top-0 block size-[5px] -translate-x-1/2 -translate-y-1/2 rounded-full', yellow ? 'bg-ivancar-yellow' : 'bg-white')}
       />
 
       {/* Cabeza + palito: la punta del palito toca el punto. */}

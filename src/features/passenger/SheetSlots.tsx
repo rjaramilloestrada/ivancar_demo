@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'motion/react';
 import { createContext, useContext, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { pageMotion } from '@/components/fx/PageTransition';
 
 /**
  * Un solo BottomSheet para todo el flujo: cada paso "pinta" su cabecera, cuerpo y acción
@@ -26,23 +27,21 @@ export interface SheetContentProps {
 export function SheetContent({ stepKey, header, footer, children }: SheetContentProps) {
   const slots = useContext(SheetSlotsContext);
   const reduce = useReducedMotion();
-  // Bloque 5: aquí se puede añadir stagger por paso (variants) sin tocar las pantallas.
-  const wrap = (node: ReactNode, delay = 0) => (
-    <motion.div
-      key={stepKey}
-      data-step={stepKey}
-      initial={reduce ? false : { opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.24, ease: [0.16, 1, 0.3, 1], delay }}
-    >
-      {node}
-    </motion.div>
-  );
+  // Transición de paso (fx/pageMotion): cabecera, cuerpo y pie entran escalonados. No hay
+  // salida animada: el contenido viejo se reemplaza al instante y nunca frena el pedido.
+  const wrap = (node: ReactNode, delay = 0) => {
+    const { initial, animate } = pageMotion(!!reduce, { delay });
+    return (
+      <motion.div key={stepKey} data-step={stepKey} initial={initial} animate={animate}>
+        {node}
+      </motion.div>
+    );
+  };
   return (
     <>
       {slots.header && createPortal(wrap(header), slots.header)}
       {slots.body && createPortal(wrap(children, 0.04), slots.body)}
-      {slots.footer && createPortal(wrap(footer), slots.footer)}
+      {slots.footer && createPortal(wrap(footer, 0.08), slots.footer)}
     </>
   );
 }

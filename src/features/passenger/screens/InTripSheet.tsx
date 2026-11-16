@@ -1,14 +1,15 @@
 import { useState } from 'react';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { Button, ButtonLink, Dialog, IconShield, IconWhatsApp, useToast } from '@/components/ui';
 import { track } from '@/lib/analytics';
-import { formatDistance, pointAlong } from '@/lib/geo';
+import { formatDistance, formatMinutes, pointAlong } from '@/lib/geo';
 import { shareWhatsappHref } from '@/lib/links';
 import { phaseProgress, useRide } from '@/store/rideStore';
 import { useNow } from '../hooks';
 import { DriverCard, RouteSummary, SheetTitle } from '../parts';
 import { SheetContent } from '../SheetSlots';
 import { locationShareText } from '../share';
-import { remainingText } from './AssignedSheet';
+import { remainingMinutes } from './AssignedSheet';
 
 /** P7 · En viaje: tiempo y distancia restantes, compartir ubicación y emergencia. */
 export function InTripSheet() {
@@ -22,7 +23,8 @@ export function InTripSheet() {
   const now = useNow(500);
 
   const p = phaseProgress({ phaseStartedAt, phaseDurationMs }, now);
-  const eta = remainingText(route.duration_s, p);
+  const etaMin = remainingMinutes(route.duration_s, p);
+  const eta = etaMin == null ? null : formatMinutes(etaMin);
   const left = formatDistance(route.distance_m * (1 - p));
   const here = pointAlong(route.path, p).point;
 
@@ -52,9 +54,9 @@ export function InTripSheet() {
             size="lg"
             title={
               <span aria-live="polite" aria-atomic="true">
-                {eta ? (
+                {etaMin != null ? (
                   <>
-                    Llegas en <span className="text-ivancar-yellow tabular-nums" data-testid="trip-eta">{eta}</span>
+                    Llegas en <AnimatedNumber value={etaMin} format={formatMinutes} className="text-ivancar-yellow" data-testid="trip-eta" />
                   </>
                 ) : (
                   'Llegando'
@@ -63,11 +65,21 @@ export function InTripSheet() {
             }
             subtitle={
               <>
-                <span className="tabular-nums" data-testid="trip-left">{left}</span> restantes · a {ride.dropoff_label}
+                <span className="tabular-nums" data-testid="trip-left">
+                  {left}
+                </span>{' '}
+                restantes · a {ride.dropoff_label}
               </>
             }
           />
-          <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10" role="progressbar" aria-label="Avance del viaje" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(p * 100)}>
+          <div
+            className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10"
+            role="progressbar"
+            aria-label="Avance del viaje"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(p * 100)}
+          >
             <div className="h-full rounded-full bg-ivancar-yellow transition-[width] duration-500 ease-linear" style={{ width: `${p * 100}%` }} />
           </div>
         </div>
@@ -101,8 +113,8 @@ export function InTripSheet() {
         description={
           <>
             <p>
-              <strong className="text-fg">Esto es una simulación del demo.</strong> En la app real, avisaría al instante a la Central IVANCAR y a tus
-              contactos de confianza, con tu ubicación en vivo y los datos de la unidad.
+              <strong className="text-fg">Esto es una simulación del demo.</strong> En la app real, avisaría al instante a la Central IVANCAR y a tus contactos
+              de confianza, con tu ubicación en vivo y los datos de la unidad.
             </p>
             <p className="mt-2">Si estás en peligro, llama al ECU 911 desde tu teléfono.</p>
           </>

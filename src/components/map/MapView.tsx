@@ -73,6 +73,12 @@ export interface MapViewProps {
   vignette?: boolean;
   /** Muestra estados de carga y de error de tiles. Default true. */
   showStatus?: boolean;
+  /**
+   * Entrada animada: el mapa abre en esta vista (p. ej. Guayaquil completo) y vuela suave
+   * hasta `center`/`zoom`. Sin efecto con prefers-reduced-motion. Mientras dura, el pin no
+   * se levanta y emite su posición inicial al terminar.
+   */
+  intro?: { center: LatLng; zoom: number };
   /** Se llama una vez con la instancia Leaflet lista. */
   onReady?: (map: L.Map) => void;
   /** Cambios de estado de los tiles (carga / listo / sin conexión). */
@@ -89,6 +95,8 @@ interface MapViewContextValue {
   insets: React.RefObject<MapInsets>;
   /** true mientras MapView mueve el mapa por su cuenta (compensar insets): el pin no se levanta. */
   internalMove: React.RefObject<boolean>;
+  /** true mientras dura la entrada animada; al terminar el mapa emite `iv:introend`. */
+  introActive: React.RefObject<boolean>;
   reduceMotion: boolean;
 }
 
@@ -133,6 +141,7 @@ export function MapView({
   maxZoom = 18,
   vignette = true,
   showStatus = true,
+  intro,
   onReady,
   onTileStatusChange,
   'aria-label': ariaLabel = 'Mapa',
@@ -156,6 +165,9 @@ export function MapView({
   };
   const insetsRef = useRef<MapInsets>(insets);
   const internalMove = useRef(false);
+  const introActive = useRef(false);
+  /** Destino de la entrada (puede cambiar si llega la geolocalización antes de volar). */
+  const introTarget = useRef<{ center: LatLng; zoom: number; flying: boolean } | null>(null);
   const reduceRef = useRef(reduce);
   reduceRef.current = reduce;
 
@@ -168,9 +180,10 @@ export function MapView({
   useLayoutEffect(() => {
     const el = elRef.current;
     if (!el) return;
+    const withIntro = !!intro && !reduceRef.current;
     const map = L.map(el, {
-      center,
-      zoom,
+      center: withIntro ? intro.center : center,
+      zoom: withIntro ? intro.zoom : zoom,
       minZoom,
       maxZoom,
       zoomControl: false,
@@ -191,11 +204,43 @@ export function MapView({
     L.control.attribution({ prefix: false, position: 'bottomright' }).addTo(map);
     // Los enlaces de atribución siguen siendo clicables, pero no entran al orden de Tab.
     const untabAttribution = () =>
-      map.getContainer().querySelectorAll('.leaflet-control-attribution a').forEach((a) => a.setAttribute('tabindex', '-1'));
+      map
+        .getContainer()
+        .querySelectorAll('.leaflet-control-attribution a')
+        .forEach((a) => a.setAttribute('tabindex', '-1'));
     map.on('layeradd layerremove', untabAttribution);
     // El centro inicial va al centro del área visible, no al del contenedor.
     const o0 = visibleOffset(insetsRef.current);
-    if (o0.x || o0.y) map.setView(map.unproject(map.project(center, zoom).subtract([o0.x, o0.y]), zoom), zoom, { animate: false });
+    if (!withIntro && (o0.x || o0.y)) map.setView(map.unproject(map.project(center, zoom).subtract([o0.x, o0.y]), zoom), zoom, { animate: false });
+
+    // Entrada: de la ciudad completa a la ubicación, tras pintar los primeros tiles.
+    let introTimer = 0;
+    const endIntro = () => {
+      if (!introActive.current) return;
+      introActive.current = false;
+      internalMove.current = false;
+      introTarget.current = null;
+      clearTimeout(introTimer);
+      map.fire('iv:introend');
+    };
+    if (withIntro) {
+      introActive.current = true;
+      internalMove.current = true;
+      introTarget.current = { center, zoom, flying: false };
+      introTimer = window.setTimeout(() => {
+        const t = introTarget.current;
+        if (!t) return;
+        t.flying = true;
+        const o = visibleOffset(insetsRef.current);
+        const c = map.unproject(map.project(t.center, t.zoom).subtract([o.x, o.y]), t.zoom);
+        map.once('moveend', endIntro);
+        map.flyTo(c, t.zoom, { duration: 1.9, easeLinearity: 0.2 });
+      }, 420);
+      // Si el usuario toma el mapa, la entrada termina ahí.
+      map.once('dragstart zoomstart', (e: L.LeafletEvent) => {
+        if (e.type === 'dragstart' || !introTarget.current?.flying) endIntro();
+      });
+    }
 
     const provider = mapTokens.tiles;
     const tileOpts: L.TileLayerOptions = {
@@ -258,6 +303,9 @@ export function MapView({
 
     return () => {
       clearTimeout(slow);
+      clearTimeout(introTimer);
+      introActive.current = false;
+      internalMove.current = false;
       window.removeEventListener('online', retry);
       ro.disconnect();
       tilesRef.current = null;
@@ -276,7 +324,8 @@ export function MapView({
     const prev = insetsRef.current;
     const next = insets;
     insetsRef.current = next;
-    if (!map) return;
+    // Durante la entrada el vuelo ya apunta al área visible: no se interrumpe.
+    if (!map || introActive.current) return;
     const a = visibleOffset(prev);
     const b = visibleOffset(next);
     const dx = a.x - b.x;
@@ -306,18 +355,22 @@ export function MapView({
     apply(dx, dy);
   }, [map, insets.top, insets.bottom, insets.left, insets.right, reduce]);
 
-  const toContainerCenter = useCallback(
-    (m: L.Map, latlng: LatLng, z: number): L.LatLng => {
-      const o = visibleOffset(insetsRef.current);
-      return m.unproject(m.project(latlng, z).subtract([o.x, o.y]), z);
-    },
-    [],
-  );
+  const toContainerCenter = useCallback((m: L.Map, latlng: LatLng, z: number): L.LatLng => {
+    const o = visibleOffset(insetsRef.current);
+    return m.unproject(m.project(latlng, z).subtract([o.x, o.y]), z);
+  }, []);
 
   const handle = useMemo<MapViewHandle>(() => {
     const flyTo: MapViewHandle['flyTo'] = (latlng, z, opts = {}) => {
       if (!map) return;
       const targetZoom = z ?? map.getZoom();
+      // Durante la entrada animada: se cambia el destino del vuelo en lugar de cortarlo.
+      const t = introTarget.current;
+      if (introActive.current && t && !t.flying) {
+        t.center = latlng;
+        t.zoom = targetZoom;
+        return;
+      }
       const c = toContainerCenter(map, latlng, targetZoom);
       const animate = (opts.animate ?? true) && !reduceRef.current;
       if (animate) map.flyTo(c, targetZoom, { duration: opts.duration ?? 0.9, easeLinearity: 0.3 });
@@ -354,10 +407,7 @@ export function MapView({
 
   useImperativeHandle(ref, () => handle, [handle]);
 
-  const ctxValue = useMemo<MapViewContextValue>(
-    () => ({ handle, insets: insetsRef, internalMove, reduceMotion: reduce }),
-    [handle, reduce],
-  );
+  const ctxValue = useMemo<MapViewContextValue>(() => ({ handle, insets: insetsRef, internalMove, introActive, reduceMotion: reduce }), [handle, reduce]);
 
   const style = {
     '--map-inset-top': `${insets.top}px`,
@@ -369,12 +419,7 @@ export function MapView({
   const retry = () => (map as (L.Map & { _ivRetry?: () => void }) | null)?._ivRetry?.();
 
   return (
-    <div
-      ref={wrapRef}
-      style={style}
-      data-tile-status={status}
-      className={cn('absolute inset-0 isolate overflow-hidden bg-[#0e0e0f]', className)}
-    >
+    <div ref={wrapRef} style={style} data-tile-status={status} className={cn('absolute inset-0 isolate overflow-hidden bg-[#0e0e0f]', className)}>
       <div ref={elRef} role="region" aria-label={ariaLabel} tabIndex={-1} className="iv-map absolute inset-0 z-0" />
 
       {showStatus && (
@@ -387,17 +432,14 @@ export function MapView({
       )}
 
       {vignette && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-40 bg-gradient-to-b from-black/70 via-black/25 to-transparent"
-        />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-40 bg-gradient-to-b from-black/70 via-black/25 to-transparent" />
       )}
 
       {showStatus && status === 'loading' && !everLoaded && (
         <div
           role="status"
           className="pointer-events-none absolute left-1/2 z-[3] -translate-x-1/2 rounded-full border border-line bg-header px-3.5 py-1.5 text-xs font-semibold text-fg-75 backdrop-blur-md"
-          style={{ bottom: `calc(${insets.bottom}px + 36px)` }}
+          style={{ bottom: 36, transform: `translateY(${-insets.bottom}px)` }}
         >
           <span className="mr-2 inline-block size-1.5 animate-pulse-dot rounded-full bg-ivancar-yellow align-middle" />
           Cargando mapa
@@ -408,7 +450,7 @@ export function MapView({
         <div
           role="alert"
           className="absolute left-1/2 z-[3] flex w-[min(92%,360px)] -translate-x-1/2 items-center gap-3 rounded-2xl border border-line-strong bg-surface/95 p-3 pr-2 shadow-sheet backdrop-blur-md"
-          style={{ bottom: `calc(${insets.bottom}px + 36px)` }}
+          style={{ bottom: 36, transform: `translateY(${-insets.bottom}px)` }}
         >
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-ivancar-yellow/15 text-ivancar-yellow">
             <IconAlert size={18} />

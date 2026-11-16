@@ -5,6 +5,7 @@ import { postMessage, useChannel } from '@/lib/channel';
 import { buildApproach, pickUnit } from '@/lib/dispatch';
 import { simTimings } from '@/lib/simConfig';
 import { fleet } from '@/mocks/drivers';
+import { vibrate } from '@/lib/haptics';
 import { rideEvents, thin, useRide, type AssignedBy } from '@/store/rideStore';
 import type { FleetUnit, LatLng } from '@/types';
 
@@ -60,6 +61,8 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
             });
             break;
           case 'assigned':
+            // Confirmación háptica corta (Android): ya hay unidad.
+            vibrate('confirm');
             if (e.by === 'auto') {
               postMessage('passenger', {
                 type: 'ride:assigned',
@@ -203,19 +206,14 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
     if (step !== 'assigned' || !phaseStartedAt || !phaseDurationMs) return;
     const T = simTimings();
     const end = phaseStartedAt + phaseDurationMs;
-    const t1 = setTimeout(() => {
-      const s = useRide.getState();
-      if (s.markArrived() && s.unit) {
-        // Bloque 5: vibración (Vibration API) vía rideEvents 'arrived'.
-        toast.show({
-          id: 'arrived',
-          tone: 'success',
-          title: 'Tu IVANCAR llegó',
-          description: `${s.unit.display_name} te espera · ${s.unit.vehicle.plate.replace('-', '\u2011')}`,
-          duration: 5000,
-        });
-      }
-    }, Math.max(0, end - Date.now()));
+    const t1 = setTimeout(
+      () => {
+        const s = useRide.getState();
+        // El aviso "Tu IVANCAR llegó" (con vibración) lo muestra PassengerApp (ArrivalBanner).
+        s.markArrived();
+      },
+      Math.max(0, end - Date.now()),
+    );
     const t2 = setTimeout(() => useRide.getState().startTrip(), Math.max(0, end + T.arrivedPauseMs - Date.now()));
     return () => {
       clearTimeout(t1);

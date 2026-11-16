@@ -245,7 +245,8 @@ const SCENARIOS = {
     await shot(page, `${tag}-p8-calificacion`);
     check(`[${tag}] resumen con tarifa referencial`, (await page.textContent('[data-testid=trip-summary]'))?.includes('Tarifa referencial de demo'));
     await page.locator('[data-testid=star-5]').click();
-    await page.getByRole('radio', { name: '$1,00' }).click();
+    // Propina: radios nativos ocultos (sr-only); se toca su etiqueta, como haría una persona.
+    await page.locator('label', { has: page.getByRole('radio', { name: '$1,00' }) }).click();
     await page.locator('[data-testid=toggle-receipt]').click();
     await sleep(300);
     await page.locator('[data-testid=receipt]').scrollIntoViewIfNeeded();

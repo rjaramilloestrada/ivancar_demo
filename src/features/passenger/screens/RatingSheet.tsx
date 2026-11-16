@@ -1,5 +1,6 @@
 import { useId, useState } from 'react';
-import { Button, IconReceipt, IconStar, useToast } from '@/components/ui';
+import { StarRating } from '@/components/fx/StarRating';
+import { Button, IconReceipt, useToast } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { formatDistance, formatDuration } from '@/lib/geo';
 import { DEMO_FARE_NOTICE, formatUSD } from '@/lib/pricing';
@@ -10,7 +11,6 @@ import { Receipt } from '../Receipt';
 import { SheetContent } from '../SheetSlots';
 
 const TIPS = [0, 0.5, 1, 2];
-const STAR_TEXT = ['', 'Muy malo', 'Malo', 'Regular', 'Bueno', 'Excelente'];
 
 /** P8 · Llegada: resumen, calificación, propina, comentario y recibo simulado. */
 export function RatingSheet() {
@@ -36,7 +36,7 @@ export function RatingSheet() {
           size="lg"
           onClick={() => {
             if (finish({ rating: stars, tip, comment })) {
-              // Bloque 5: confetti amarillo al terminar (rideEvents 'rated').
+              // Con 4 o 5 estrellas, PassengerApp lanza el confetti (rideEvents 'rated').
               toast.show({ id: 'thanks', tone: 'success', title: '¡Gracias por viajar con IVANCAR!', description: 'Tu viaje quedó en Mis viajes.' });
             }
           }}
@@ -58,25 +58,7 @@ export function RatingSheet() {
           <legend id={ids.stars} className="text-[16px] font-bold">
             ¿Cómo estuvo tu viaje{unit ? ` con ${unit.display_name}` : ''}?
           </legend>
-          <div className="mt-2 flex items-center gap-1" role="radiogroup" aria-labelledby={ids.stars}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <button
-                key={n}
-                type="button"
-                role="radio"
-                aria-checked={stars === n}
-                aria-label={`${n} ${n === 1 ? 'estrella' : 'estrellas'}: ${STAR_TEXT[n]}`}
-                onClick={() => setStars(n)}
-                className="grid size-12 place-items-center rounded-full transition-transform active:scale-90"
-                data-testid={`star-${n}`}
-              >
-                <IconStar size={32} filled={!!stars && n <= stars} className={stars && n <= stars ? 'text-ivancar-yellow' : 'text-fg-55'} />
-              </button>
-            ))}
-            <span className="ml-2 text-[14px] font-semibold text-fg-75" aria-hidden>
-              {stars ? STAR_TEXT[stars] : ''}
-            </span>
-          </div>
+          <StarRating value={stars} onChange={setStars} labelledBy={ids.stars} size={34} className="mt-2 -ml-1.5" />
         </fieldset>
 
         <fieldset className="mt-5 min-w-0">
@@ -93,14 +75,7 @@ export function RatingSheet() {
                   tip === t ? 'border-ivancar-yellow bg-ivancar-yellow text-on-yellow' : 'border-line-strong text-fg-80 hover:border-fg-55',
                 )}
               >
-                <input
-                  type="radio"
-                  name={ids.tip}
-                  value={t}
-                  checked={tip === t}
-                  onChange={() => setTip(t)}
-                  className="sr-only"
-                />
+                <input type="radio" name={ids.tip} value={t} checked={tip === t} onChange={() => setTip(t)} className="sr-only" />
                 {t === 0 ? 'No' : formatUSD(t)}
               </label>
             ))}

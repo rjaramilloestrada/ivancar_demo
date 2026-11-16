@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
+import { SelectGlow, SelectGlowGroup } from '@/components/fx/SelectGlow';
 import { ServiceIcon } from '@/components/services/ServiceIcon';
 import { Button, IconCalendar, IconCash, IconCard, IconChevronRight, IconInfo, IconMinus, IconNote, IconPlus, IconTicket, Skeleton } from '@/components/ui';
 import { cn } from '@/lib/cn';
@@ -62,7 +64,10 @@ export function ServiceSheet() {
               </span>
             }
           />
-          <p className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-line-strong px-2.5 py-1 text-[11px] font-semibold text-fg-75" data-testid="fare-notice">
+          <p
+            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-line-strong px-2.5 py-1 text-[11px] font-semibold text-fg-75"
+            data-testid="fare-notice"
+          >
             <IconInfo size={13} className="text-ivancar-yellow" />
             {DEMO_FARE_NOTICE}
           </p>
@@ -78,14 +83,18 @@ export function ServiceSheet() {
           >
             <PayIcon size={18} className="shrink-0 text-ivancar-yellow" />
             <span className="font-semibold">{PAYMENT_LABEL[options.payment]}</span>
-            <span aria-hidden className="text-fg-55">·</span>
+            <span aria-hidden className="text-fg-55">
+              ·
+            </span>
             <span className={cn('inline-flex items-center gap-1', scheduled && 'font-semibold text-ivancar-yellow')}>
               {scheduled && <IconCalendar size={14} />}
               {scheduleLabel(options.scheduledFor)}
             </span>
             {options.note && (
               <>
-                <span aria-hidden className="text-fg-55">·</span>
+                <span aria-hidden className="text-fg-55">
+                  ·
+                </span>
                 <IconNote size={15} className="shrink-0" />
                 <span className="sr-only">con nota</span>
               </>
@@ -104,7 +113,7 @@ export function ServiceSheet() {
             data-testid="cta-request"
             trailingIcon={
               fare ? (
-                <span className="ml-1 rounded-full bg-black/10 px-2.5 py-0.5 text-[15px] tabular-nums">{formatUSD(fare.amount)}</span>
+                <AnimatedNumber value={fare.amount} format="usd" className="ml-1 rounded-full bg-black/10 px-2.5 py-0.5 text-[15px]" data-testid="cta-price" />
               ) : undefined
             }
           >
@@ -121,90 +130,90 @@ export function ServiceSheet() {
 
       <fieldset className="min-w-0 pb-4">
         <legend className="sr-only">Tipo de servicio</legend>
-        <div className="flex flex-col gap-2">
-          {services.map((sv) => {
-            const active = sv.id === serviceId;
-            const f = route ? estimateFare(sv, route.distance_m, { hours }) : null;
-            return (
-              <div key={sv.id}>
-                <label
-                  className={cn(
-                    'relative flex min-h-[72px] cursor-pointer items-center gap-3 rounded-[20px] border p-3 pr-4 transition-[border-color,background-color,box-shadow] duration-200',
-                    'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ivancar-yellow',
-                    active ? 'border-ivancar-yellow bg-ivancar-yellow/[0.07] shadow-glow' : 'border-line hover:border-line-strong',
-                  )}
-                  data-testid={`service-${sv.id}`}
-                  data-selected={active || undefined}
-                >
-                  <input
-                    type="radio"
-                    name="service"
-                    value={sv.id}
-                    checked={active}
-                    onChange={() => s.selectService(sv.id)}
-                    className="sr-only"
-                  />
-                  <ServiceIcon service={sv.id} size={56} muted={!active} className="shrink-0" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[16px] font-bold">{sv.name}</span>
-                    <span className="line-clamp-2 block text-[13px] text-fg-65">
-                      Llega en {etas[sv.id] ?? '—'} min · {sv.capacity_label}
-                    </span>
-                  </span>
-                  <span className="shrink-0 text-right">
-                    {f ? (
-                      <span className={cn('block text-[17px] font-black tabular-nums', active ? 'text-ivancar-yellow' : 'text-fg')}>
-                        {formatUSD(f.amount)}
-                      </span>
-                    ) : (
-                      <Skeleton className="h-5 w-14" />
+        <SelectGlowGroup>
+          <div className="flex flex-col gap-2">
+            {services.map((sv) => {
+              const active = sv.id === serviceId;
+              const f = route ? estimateFare(sv, route.distance_m, { hours }) : null;
+              return (
+                <div key={sv.id}>
+                  <label
+                    className={cn(
+                      'relative flex h-[76px] cursor-pointer items-center gap-3 rounded-[20px] border p-3 pr-4 transition-[border-color,transform] duration-200 active:scale-[0.985]',
+                      'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ivancar-yellow',
+                      active ? 'border-transparent' : 'border-line hover:border-line-strong',
                     )}
-                    {f?.mode === 'hourly' && <span className="block text-[11px] text-fg-55">{f.hours} h</span>}
-                  </span>
-                </label>
+                    data-testid={`service-${sv.id}`}
+                    data-selected={active || undefined}
+                  >
+                    <input type="radio" name="service" value={sv.id} checked={active} onChange={() => s.selectService(sv.id)} className="sr-only" />
+                    {/* Brillo de selección: se desliza de tarjeta en tarjeta (decorativo). */}
+                    <SelectGlow active={active} />
+                    <ServiceIcon service={sv.id} size={56} muted={!active} className="relative shrink-0" />
+                    {/* Dos líneas fijas (llegada / capacidad): todas las tarjetas miden lo mismo. */}
+                    <span className="relative min-w-0 flex-1 leading-snug">
+                      <span className="block truncate text-[16px] font-bold">{sv.name}</span>
+                      <span className="block truncate text-[13px] text-fg-65">Llega en {etas[sv.id] ?? '—'} min</span>
+                      <span className="block truncate text-[13px] text-fg-55">{sv.capacity_label}</span>
+                    </span>
+                    <span className="relative shrink-0 text-right">
+                      {f ? (
+                        <AnimatedNumber
+                          value={f.amount}
+                          format="usd"
+                          className={cn('block text-[17px] font-black transition-colors', active ? 'text-ivancar-yellow' : 'text-fg')}
+                          data-testid={`price-${sv.id}`}
+                        />
+                      ) : (
+                        <Skeleton className="h-5 w-14" />
+                      )}
+                      {f?.mode === 'hourly' && <span className="block text-[11px] text-fg-55">{f.hours} h</span>}
+                    </span>
+                  </label>
 
-                {active && sv.id === 'por_horas' && (
-                  <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-2" data-testid="hours-picker">
-                    <span className="min-w-0 text-[14px]">
-                      <span className="block font-semibold">¿Cuántas horas?</span>
-                      <span className="block text-[12px] text-fg-55">
-                        {formatUSD(sv.hourly_rate ?? 0)}/h · mín. {HOURS_MIN} h
+                  {active && sv.id === 'por_horas' && (
+                    <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-2" data-testid="hours-picker">
+                      <span className="min-w-0 text-[14px]">
+                        <span className="block font-semibold">¿Cuántas horas?</span>
+                        <span className="block text-[12px] text-fg-55">
+                          {formatUSD(sv.hourly_rate ?? 0)}/h · mín. {HOURS_MIN} h
+                        </span>
                       </span>
-                    </span>
-                    <span className="flex shrink-0 items-center gap-1">
-                      <button
-                        type="button"
-                        aria-label="Menos horas"
-                        disabled={hours <= HOURS_MIN}
-                        onClick={() => s.setHours(hours - 1)}
-                        className="grid size-11 place-items-center rounded-full border border-line-strong disabled:opacity-40"
-                      >
-                        <IconMinus size={18} />
-                      </button>
-                      <output className="w-12 text-center text-[18px] font-black tabular-nums" aria-live="polite">
-                        {hours} h
-                      </output>
-                      <button
-                        type="button"
-                        aria-label="Más horas"
-                        disabled={hours >= HOURS_MAX}
-                        onClick={() => s.setHours(hours + 1)}
-                        className="grid size-11 place-items-center rounded-full border border-line-strong disabled:opacity-40"
-                      >
-                        <IconPlus size={18} />
-                      </button>
-                    </span>
-                  </div>
-                )}
-                {active && sv.id === 'encomiendas' && (
-                  <InlineNote icon={<IconInfo size={15} />} className="mt-2 px-1">
-                    Para sobres, documentos y paquetes de hasta 20 kg. Deja en la nota quién recibe y su teléfono.
-                  </InlineNote>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label="Menos horas"
+                          disabled={hours <= HOURS_MIN}
+                          onClick={() => s.setHours(hours - 1)}
+                          className="grid size-11 place-items-center rounded-full border border-line-strong disabled:opacity-40"
+                        >
+                          <IconMinus size={18} />
+                        </button>
+                        <output className="w-12 text-center text-[18px] font-black tabular-nums" aria-live="polite">
+                          {hours} h
+                        </output>
+                        <button
+                          type="button"
+                          aria-label="Más horas"
+                          disabled={hours >= HOURS_MAX}
+                          onClick={() => s.setHours(hours + 1)}
+                          className="grid size-11 place-items-center rounded-full border border-line-strong disabled:opacity-40"
+                        >
+                          <IconPlus size={18} />
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                  {active && sv.id === 'encomiendas' && (
+                    <InlineNote icon={<IconInfo size={15} />} className="mt-2 px-1">
+                      Para sobres, documentos y paquetes de hasta 20 kg. Deja en la nota quién recibe y su teléfono.
+                    </InlineNote>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </SelectGlowGroup>
       </fieldset>
     </SheetContent>
   );

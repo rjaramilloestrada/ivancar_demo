@@ -17,11 +17,14 @@ function preloadInter(): Plugin {
       handler(_html, ctx) {
         const file = Object.keys(ctx.bundle ?? {}).find((f) => /inter-latin-wght-normal-.*\.woff2$/.test(f));
         if (!file) return [];
+        // Solo en la primera visita: con el service worker activo la fuente sale de la caché
+        // al instante y un preload extra queda "sin usar" (aviso en consola).
+        const href = `${BASE}${file}`;
         return [
           {
-            tag: 'link',
-            attrs: { rel: 'preload', as: 'font', type: 'font/woff2', crossorigin: '', href: `${BASE}${file}` },
-            injectTo: 'head-prepend',
+            tag: 'script',
+            children: `if(!(navigator.serviceWorker&&navigator.serviceWorker.controller)){var l=document.createElement('link');l.rel='preload';l.as='font';l.type='font/woff2';l.crossOrigin='';l.href='${href}';document.head.appendChild(l)}`,
+            injectTo: 'head',
           },
         ];
       },

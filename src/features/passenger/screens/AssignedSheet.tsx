@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { Button, ButtonLink, Dialog, IconChat, IconClose, IconPhone, IconShare, useToast } from '@/components/ui';
 import { track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
@@ -11,11 +12,17 @@ import { SheetContent } from '../SheetSlots';
 import { useChat } from '../chat/chatStore';
 import { tripShareText } from '../share';
 
-/** Minutos que faltan de una fase, en texto ("4 min"), o null si ya casi llega. */
-export function remainingText(totalSeconds: number, progress: number): string | null {
+/** Minutos que faltan de una fase (entero, ≥ 1), o null si ya casi llega. */
+export function remainingMinutes(totalSeconds: number, progress: number): number | null {
   const left = (totalSeconds * (1 - progress)) / 60;
   if (progress >= 0.985 || left < 0.25) return null;
-  return formatMinutes(left);
+  return Math.max(1, Math.ceil(left - 1e-9));
+}
+
+/** Minutos que faltan de una fase, en texto ("4 min"), o null si ya casi llega. */
+export function remainingText(totalSeconds: number, progress: number): string | null {
+  const m = remainingMinutes(totalSeconds, progress);
+  return m == null ? null : formatMinutes(m);
 }
 
 /** P6 · Unidad asignada: conductor, placa, ETA en vivo y acciones. */
@@ -35,7 +42,8 @@ export function AssignedSheet() {
 
   const p = phaseProgress({ phaseStartedAt, phaseDurationMs }, now);
   const arrived = ride.status === 'arrived' || p >= 1;
-  const eta = remainingText(approach.duration_s, p);
+  const etaMin = remainingMinutes(approach.duration_s, p);
+  const eta = etaMin == null ? null : formatMinutes(etaMin);
   const v = unit.vehicle;
 
   const shareHref = shareWhatsappHref(
@@ -62,9 +70,9 @@ export function AssignedSheet() {
             eyebrow={assignedBy === 'central' ? 'Asignada por la Central IVANCAR' : 'Unidad asignada'}
             title={
               <span aria-live="polite" aria-atomic="true">
-                {eta ? (
+                {etaMin != null ? (
                   <>
-                    Llega en <span className="text-ivancar-yellow tabular-nums" data-testid="eta">{eta}</span>
+                    Llega en <AnimatedNumber value={etaMin} format={formatMinutes} className="text-ivancar-yellow" data-testid="eta" />
                   </>
                 ) : (
                   'Llegando'
@@ -77,14 +85,7 @@ export function AssignedSheet() {
         )
       }
       footer={
-        <ButtonLink
-          href={shareHref}
-          fullWidth
-          size="lg"
-          leadingIcon={<IconShare size={20} />}
-          onClick={() => track('share_trip')}
-          data-testid="share-trip"
-        >
+        <ButtonLink href={shareHref} fullWidth size="lg" leadingIcon={<IconShare size={20} />} onClick={() => track('share_trip')} data-testid="share-trip">
           Compartir viaje
         </ButtonLink>
       }
@@ -93,7 +94,13 @@ export function AssignedSheet() {
         <DriverCard unit={unit} />
 
         <div className="mt-3 grid grid-cols-3 gap-2">
-          <ActionLink href={telHref} icon={<IconPhone size={20} />} label="Llamar" onClick={() => track('call_click', { from: 'assigned' })} testId="call-driver" />
+          <ActionLink
+            href={telHref}
+            icon={<IconPhone size={20} />}
+            label="Llamar"
+            onClick={() => track('call_click', { from: 'assigned' })}
+            testId="call-driver"
+          />
           <ActionButton icon={<IconChat size={20} />} label="Chat" badge={unread} onClick={() => openChat(true)} testId="chat-driver" />
           <ActionButton icon={<IconClose size={20} />} label="Cancelar" tone="danger" onClick={() => setConfirm(true)} testId="cancel-ride" />
         </div>
@@ -161,7 +168,11 @@ function ActionButton({
       {icon}
       {label}
       {badge > 0 && (
-        <span aria-hidden className="absolute right-3 top-2 grid min-w-5 place-items-center rounded-full bg-ivancar-yellow px-1 text-[11px] font-black leading-5 text-on-yellow" data-testid="chat-unread">
+        <span
+          aria-hidden
+          className="absolute right-3 top-2 grid min-w-5 place-items-center rounded-full bg-ivancar-yellow px-1 text-[11px] font-black leading-5 text-on-yellow"
+          data-testid="chat-unread"
+        >
           {badge}
         </span>
       )}

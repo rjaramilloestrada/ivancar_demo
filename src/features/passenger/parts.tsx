@@ -1,16 +1,6 @@
 import { useRef, type ReactNode } from 'react';
-import {
-  IconBag,
-  IconBriefcase,
-  IconCar,
-  IconChevronLeft,
-  IconGraduation,
-  IconHome,
-  IconLandmark,
-  IconPlane,
-  IconStar,
-  IconWave,
-} from '@/components/ui';
+import { Stagger, StaggerItem } from '@/components/fx/Stagger';
+import { IconBag, IconBriefcase, IconCar, IconChevronLeft, IconGraduation, IconHome, IconLandmark, IconPlane, IconStar, IconWave } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import type { FleetUnit, PaymentMethod, PlaceCategory } from '@/types';
 import { useStepFocus } from './hooks';
@@ -37,9 +27,7 @@ export function IconButton({
       onClick={onClick}
       className={cn(
         'grid size-11 shrink-0 place-items-center rounded-full border transition-colors',
-        tone === 'danger'
-          ? 'border-danger/50 bg-danger/10 text-danger hover:bg-danger/20'
-          : 'border-line-strong bg-surface-raised text-fg hover:border-fg-55',
+        tone === 'danger' ? 'border-danger/50 bg-danger/10 text-danger hover:bg-danger/20' : 'border-line-strong bg-surface-raised text-fg hover:border-fg-55',
         className,
       )}
     >
@@ -195,22 +183,27 @@ export function InlineNote({ children, icon, className }: { children: ReactNode;
   );
 }
 
-/** Tarjeta del conductor: quién es (arriba) y qué auto buscar, con la placa grande (abajo). */
+/**
+ * Tarjeta del conductor: quién es (arriba) y qué auto buscar, con la placa grande (abajo).
+ * Entra en cascada (avatar, nombre, auto, placa); con otra unidad (reasignación) se repite.
+ */
 export function DriverCard({ unit, className }: { unit: FleetUnit; className?: string }) {
   const v = unit.vehicle;
   return (
-    <div className={cn('rounded-[20px] border border-line bg-surface-raised p-4', className)} data-testid="driver-card">
+    <Stagger replayKey={unit.id} step={0.06} className={cn('rounded-[20px] border border-line bg-surface-raised p-4', className)} data-testid="driver-card">
       <div className="flex items-center gap-3">
-        <Avatar unit={unit} size={52} />
-        <div className="min-w-0 flex-1">
+        <StaggerItem from="left" offset={10}>
+          <Avatar unit={unit} size={52} />
+        </StaggerItem>
+        <StaggerItem className="min-w-0 flex-1">
           <p className="truncate text-[17px] font-bold" data-testid="driver-name">
             {unit.display_name}
           </p>
           <Rating value={unit.rating} trips={unit.trips_count} />
-        </div>
+        </StaggerItem>
       </div>
       <div className="mt-3 flex items-center justify-between gap-3 border-t border-line pt-3">
-        <p className="min-w-0 text-[14px] leading-snug">
+        <StaggerItem className="min-w-0 text-[14px] leading-snug">
           <span className="block truncate font-semibold">
             {v.make} {v.model}
           </span>
@@ -218,9 +211,11 @@ export function DriverCard({ unit, className }: { unit: FleetUnit; className?: s
             <span aria-hidden className="size-2.5 shrink-0 rounded-full border border-white/30" style={{ background: v.color_hex }} />
             {v.color} · {v.year}
           </span>
-        </p>
-        <Plate plate={v.plate} />
+        </StaggerItem>
+        <StaggerItem>
+          <Plate plate={v.plate} />
+        </StaggerItem>
       </div>
-    </div>
+    </Stagger>
   );
 }

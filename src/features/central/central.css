@@ -142,18 +142,9 @@
 }
 
 /* ------------------------------------------------------------ Tarjetas */
+/* El pulso lo dibuja PulseAlert (components/fx), con opacidad en el compositor. */
 [data-order-card][data-alert='true'] {
   border-color: rgb(246 201 14 / 0.9);
-  animation: iv-card-alert 1.6s ease-in-out infinite;
-}
-@keyframes iv-card-alert {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgb(246 201 14 / 0), inset 0 0 0 0 rgb(246 201 14 / 0);
-  }
-  50% {
-    box-shadow: 0 0 0 4px rgb(246 201 14 / 0.18), inset 0 0 24px 0 rgb(246 201 14 / 0.1);
-  }
 }
 /* Pedido real recién llegado desde la app: brillo amarillo unos segundos. */
 [data-order-card][data-fresh='true'] {
@@ -167,9 +158,5 @@
     animation: none;
     opacity: 1;
     transform: none;
-  }
-  [data-order-card][data-alert='true'] {
-    animation: none;
-    box-shadow: 0 0 0 3px rgb(246 201 14 / 0.3);
   }
 }

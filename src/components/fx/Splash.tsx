@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { asset } from '@/lib/links';
 
 const SESSION_KEY = 'ivancar.splash.shown';
-const LOGO = 'img/ivancarlogo-700.webp';
+const LOGO = 'img/ivancarlogo-440.webp';
 
 /** true si el splash aún no se mostró en esta sesión (pestaña). Nunca lanza. */
 export function shouldShowSplash(): boolean {
@@ -128,7 +128,7 @@ export function Splash({ onDone, logoWidth, zIndex = 2000 }: SplashProps) {
   const leaving = phase !== 'in';
   const outDur = phase === 'skip' ? T.skipDur : reduce ? 0.2 : T.outDur;
   const width = logoWidth ? `${logoWidth}px` : 'min(72vw, 300px)';
-  const logoBox: CSSProperties = { width, aspectRatio: '700 / 142' };
+  const logoBox: CSSProperties = { width, aspectRatio: '1412 / 287' };
   const src = asset(LOGO);
   const mask = `url("${src}") center / 100% 100% no-repeat`;
   const play = ready && !reduce;

@@ -1,12 +1,4 @@
-import {
-  animate,
-  motion,
-  useDragControls,
-  useMotionValue,
-  useReducedMotion,
-  useTransform,
-  type PanInfo,
-} from 'motion/react';
+import { animate, motion, useDragControls, useMotionValue, useReducedMotion, useTransform, type PanInfo } from 'motion/react';
 import {
   useCallback,
   useId,
@@ -19,10 +11,14 @@ import {
   type ReactNode,
 } from 'react';
 import { cn } from '@/lib/cn';
+import { interLoaded, whenInterReady } from '@/lib/fonts';
 import { springs } from '@/theme/tokens';
 
 export type SheetSnap = 'peek' | 'half' | 'full';
 const ORDER: SheetSnap[] = ['peek', 'half', 'full'];
+
+/** Tope de espera por la tipografía antes de mostrar el sheet (ms). */
+const FONT_WAIT_MS = 700;
 
 export interface BottomSheetProps {
   /** Nombre accesible de la región (p. ej. "Pedir taxi"). */
@@ -98,7 +94,21 @@ export function BottomSheet({
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const [m, setM] = useState({ container: 0, handle: 0, header: 0, content: 0, footer: 0 });
-  const measured = m.container > 0;
+  // No se muestra hasta tener la tipografía final (o un tope corto): medir con la fuente de
+  // reserva y redimensionar al llegar Inter producía un salto de layout visible (CLS).
+  const [fontsOk, setFontsOk] = useState(interLoaded);
+  const measured = m.container > 0 && fontsOk;
+  useLayoutEffect(() => {
+    if (fontsOk) return;
+    let alive = true;
+    const done = () => alive && setFontsOk(true);
+    const t = setTimeout(done, FONT_WAIT_MS);
+    void whenInterReady().then(done);
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [fontsOk]);
 
   // Medición: contenedor padre + partes del sheet (alto natural del contenido).
   useLayoutEffect(() => {
@@ -115,14 +125,17 @@ export function BottomSheet({
       });
     read();
     const ro = new ResizeObserver(read);
-    [parent, handleRef.current, headerRef.current, contentRef.current, footerRef.current].forEach(
-      (el) => el && ro.observe(el),
-    );
+    [parent, handleRef.current, headerRef.current, contentRef.current, footerRef.current].forEach((el) => el && ro.observe(el));
     return () => ro.disconnect();
   }, []);
 
   const natural = m.handle + m.header + m.content + m.footer;
-  const fullH = Math.max(0, Math.min(natural, m.container - topOffset));
+  // Caja de layout constante (alto del contenedor menos topOffset): los cambios de contenido
+  // y de snap se expresan solo con transform, que no mueve el layout (sin CLS).
+  const boxH = Math.max(0, m.container - topOffset);
+  const fullH = Math.max(0, Math.min(natural, boxH));
+  /** y mínima: con contenido corto, la parte sobrante de la caja queda bajo el borde. */
+  const base = boxH - fullH;
   const peekH = Math.min(fullH, Math.max(72, peekHeight ?? m.handle + m.header + m.footer));
   const halfH = Math.min(fullH, Math.max(peekH, Math.round(m.container * halfRatio)));
   const heights: Record<SheetSnap, number> = { peek: peekH, half: halfH, full: fullH };
@@ -130,15 +143,15 @@ export function BottomSheet({
   // y = cuánto se esconde el sheet bajo el borde inferior.
   const y = useMotionValue(10000);
   const footerY = useTransform(y, (v) => -v);
-  const backdropOpacity = useTransform(y, [0, Math.max(1, fullH - halfH)], [1, 0], { clamp: true });
+  const backdropOpacity = useTransform(y, [base, base + Math.max(1, fullH - halfH)], [1, 0], { clamp: true });
 
   const animateTo = useCallback(
     (target: SheetSnap) => {
-      const to = fullH - heights[target];
+      const to = boxH - heights[target];
       if (reduce) y.set(to);
       else animate(y, to, springs.sheet);
     },
-    [fullH, peekH, halfH, reduce, y],
+    [boxH, fullH, peekH, halfH, reduce, y],
   );
 
   // Entrada desde abajo al medir por primera vez y reajuste cuando cambian alturas o snap.
@@ -147,7 +160,7 @@ export function BottomSheet({
     if (!measured) return;
     if (first.current) {
       first.current = false;
-      y.set(reduce ? fullH - heights[snap] : fullH);
+      y.set(reduce ? boxH - heights[snap] : boxH);
     }
     animateTo(snap);
   }, [measured, snap, animateTo]);
@@ -168,11 +181,7 @@ export function BottomSheet({
     if (s === 'peek') return fullH - peekH > 8;
     return halfH - peekH > 8 && fullH - halfH > 8;
   });
-  const effective: SheetSnap = distinct.includes(snap)
-    ? snap
-    : snap === 'half' && distinct.includes('peek') && halfH - peekH <= 8
-      ? 'peek'
-      : 'full';
+  const effective: SheetSnap = distinct.includes(snap) ? snap : snap === 'half' && distinct.includes('peek') && halfH - peekH <= 8 ? 'peek' : 'full';
 
   // Se usa el desplazamiento del puntero (no y.get()), que es exacto aunque el
   // último frame del arrastre aún no se haya pintado.
@@ -185,8 +194,8 @@ export function BottomSheet({
   };
   const onDragEnd = (_: unknown, info: PanInfo) => {
     document.documentElement.style.userSelect = '';
-    const endY = Math.min(fullH - peekH, Math.max(0, dragStartY.current + info.offset.y));
-    const projected = fullH - (endY + info.velocity.y * 0.2);
+    const endY = Math.min(boxH - peekH, Math.max(base, dragStartY.current + info.offset.y));
+    const projected = boxH - (endY + info.velocity.y * 0.2);
     let best: SheetSnap = distinct[0];
     for (const s of distinct) {
       if (Math.abs(heights[s] - projected) < Math.abs(heights[best] - projected)) best = s;
@@ -243,10 +252,7 @@ export function BottomSheet({
         <motion.div
           aria-hidden
           style={{ opacity: backdropOpacity }}
-          className={cn(
-            'absolute inset-0 z-30 bg-black/55',
-            effective === 'full' ? 'pointer-events-auto' : 'pointer-events-none',
-          )}
+          className={cn('absolute inset-0 z-30 bg-black/55', effective === 'full' ? 'pointer-events-auto' : 'pointer-events-none')}
           onClick={() => setSnap(distinct.includes('half') ? 'half' : distinct[0])}
         />
       )}
@@ -257,11 +263,11 @@ export function BottomSheet({
         dragControls={controls}
         dragListener={false}
         dragMomentum={false}
-        dragConstraints={{ top: 0, bottom: Math.max(0, fullH - peekH) }}
+        dragConstraints={{ top: base, bottom: Math.max(base, boxH - peekH) }}
         dragElastic={{ top: 0.08, bottom: 0.25 }}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        style={{ y, height: fullH || undefined, visibility: measured ? 'visible' : 'hidden' }}
+        style={{ y, height: boxH || undefined, visibility: measured ? 'visible' : 'hidden' }}
         // overflow-hidden no impide el scroll programático (scrollIntoView, foco): si pasa,
         // el pie fijo se desplazaría. La sección nunca debe desplazarse.
         onScroll={(e) => {
@@ -298,10 +304,7 @@ export function BottomSheet({
           inert={effective === 'peek'}
           onPointerDown={startBodyDrag}
           onFocus={onBodyFocus}
-          className={cn(
-            'min-h-0 flex-1 overscroll-contain',
-            effective === 'full' ? 'touch-pan-y overflow-y-auto' : 'touch-none select-none overflow-hidden',
-          )}
+          className={cn('min-h-0 flex-1 overscroll-contain', effective === 'full' ? 'touch-pan-y overflow-y-auto' : 'touch-none select-none overflow-hidden')}
           style={{ paddingBottom: m.footer }}
         >
           <div ref={contentRef} className={cn('px-5', !footer && 'pb-safe')}>
