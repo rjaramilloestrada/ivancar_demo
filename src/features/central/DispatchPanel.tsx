@@ -76,51 +76,53 @@ export default function DispatchPanel() {
       <div className="-mt-1 px-4 pb-2.5 md:hidden">
         <DemoBanner className="border border-line" />
       </div>
-      <KpiBar />
+      <main className="flex min-h-0 flex-1 flex-col">
+        <KpiBar />
 
-      {wide ? (
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,380px)_1fr] gap-4 px-4 pb-4 lg:grid-cols-[400px_1fr] xl:grid-cols-[430px_1fr]">
-          <OrdersColumn className="min-h-0" />
-          <section aria-label="Mapa de flota" className="relative min-h-0 overflow-hidden rounded-[24px] border border-line">
-            <FleetMap insetRight={hasDetail ? detailW + DETAIL_GAP * 2 : 0} />
-            <MapLegend />
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 flex flex-col p-4" style={{ width: detailW + DETAIL_GAP * 2 }}>
-              <DetailPanel className="min-h-0" />
-            </div>
-          </section>
-        </div>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div role="tablist" aria-label="Vista" className="mx-4 mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-full border border-line-strong p-1">
-            {(['orders', 'map'] as const).map((t) => (
-              <button
-                key={t}
-                role="tab"
-                type="button"
-                aria-selected={tab === t}
-                onClick={() => setTab(t)}
-                className={cn('h-10 rounded-full text-[14px] font-bold transition-colors', tab === t ? 'bg-ivancar-yellow text-on-yellow' : 'text-fg-75')}
-                data-testid={`tab-${t}`}
-              >
-                {t === 'orders' ? 'Pedidos' : 'Mapa de flota'}
-              </button>
-            ))}
-          </div>
-          {tab === 'orders' ? (
-            <div className="flex min-h-0 flex-1 flex-col px-4">
-              <OrdersColumn className="min-h-0 flex-1" />
-            </div>
-          ) : (
-            <section aria-label="Mapa de flota" className="relative mx-4 mb-4 min-h-0 flex-1 overflow-hidden rounded-[20px] border border-line">
-              <FleetMap insetBottom={hasDetail ? 300 : 0} />
+        {wide ? (
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(320px,380px)_1fr] gap-4 px-4 pb-4 lg:grid-cols-[400px_1fr] xl:grid-cols-[430px_1fr]">
+            <OrdersColumn className="min-h-0" />
+            <section aria-label="Mapa de flota" className="relative min-h-0 overflow-hidden rounded-[24px] border border-line">
+              <FleetMap insetRight={hasDetail ? detailW + DETAIL_GAP * 2 : 0} />
               <MapLegend />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex max-h-[62%] flex-col p-2">
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-10 flex flex-col p-4" style={{ width: detailW + DETAIL_GAP * 2 }}>
                 <DetailPanel className="min-h-0" />
               </div>
             </section>
-          )}
-        </div>
-      )}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div role="tablist" aria-label="Vista" className="mx-4 mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-full border border-line-strong p-1">
+              {(['orders', 'map'] as const).map((t) => (
+                <button
+                  key={t}
+                  role="tab"
+                  type="button"
+                  aria-selected={tab === t}
+                  onClick={() => setTab(t)}
+                  className={cn('h-10 rounded-full text-[14px] font-bold transition-colors', tab === t ? 'bg-ivancar-yellow text-on-yellow' : 'text-fg-75')}
+                  data-testid={`tab-${t}`}
+                >
+                  {t === 'orders' ? 'Pedidos' : 'Mapa de flota'}
+                </button>
+              ))}
+            </div>
+            {tab === 'orders' ? (
+              <div className="flex min-h-0 flex-1 flex-col px-4">
+                <OrdersColumn className="min-h-0 flex-1" />
+              </div>
+            ) : (
+              <section aria-label="Mapa de flota" className="relative mx-4 mb-4 min-h-0 flex-1 overflow-hidden rounded-[20px] border border-line">
+                <FleetMap insetBottom={hasDetail ? 300 : 0} />
+                <MapLegend />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex max-h-[62%] flex-col p-2">
+                  <DetailPanel className="min-h-0" />
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+      </main>
 
       <LiveAnnouncer />
     </div>
@@ -205,7 +207,14 @@ function KpiBar() {
       warn: alerts > 0,
     },
     { id: 'unassigned', label: 'Sin asignar', short: 'Sin asignar', value: String(k.unassigned), hint: 'Esperando unidad', icon: IconClock, warn: false },
-    { id: 'units', label: 'Unidades disponibles', short: 'Unidades libres', value: String(k.unitsAvailable), hint: `de ${k.unitsTotal} en el mapa`, icon: IconCar },
+    {
+      id: 'units',
+      label: 'Unidades disponibles',
+      short: 'Unidades libres',
+      value: String(k.unitsAvailable),
+      hint: `de ${k.unitsTotal} en el mapa`,
+      icon: IconCar,
+    },
     {
       id: 'avg',
       label: 'Asignación promedio',
@@ -216,37 +225,40 @@ function KpiBar() {
     },
   ];
   return (
-    <dl className="grid shrink-0 grid-cols-2 gap-2 px-4 pb-3 md:grid-cols-4 md:gap-3 md:px-4 md:pb-4" aria-label="Indicadores de la sesión">
+    <ul className="grid shrink-0 grid-cols-2 gap-2 px-4 pb-3 md:grid-cols-4 md:gap-3 md:px-4 md:pb-4" aria-label="Indicadores de la sesión">
       {tiles.map((t) => (
-        <div
+        <li
           key={t.id}
-          className={cn(
-            'flex items-center gap-3 rounded-2xl border bg-surface px-4 py-2.5 md:py-3',
-            t.warn ? 'border-ivancar-yellow/60' : 'border-line',
-          )}
+          className={cn('flex items-center gap-3 rounded-2xl border bg-surface px-4 py-2.5 md:py-3', t.warn ? 'border-ivancar-yellow/60' : 'border-line')}
           data-testid={`kpi-${t.id}`}
         >
           <span
             aria-hidden
-            className={cn('hidden size-9 shrink-0 place-items-center rounded-full xl:grid', t.warn ? 'bg-ivancar-yellow text-on-yellow' : 'bg-white/[0.06] text-ivancar-yellow')}
+            className={cn(
+              'hidden size-9 shrink-0 place-items-center rounded-full xl:grid',
+              t.warn ? 'bg-ivancar-yellow text-on-yellow' : 'bg-white/[0.06] text-ivancar-yellow',
+            )}
           >
             <t.icon size={18} />
           </span>
           <div className="min-w-0">
-            <dt className="truncate text-[10.5px] font-bold uppercase tracking-[0.14em] text-fg-55">
+            <p className="truncate text-[10.5px] font-bold uppercase tracking-[0.14em] text-fg-55">
               <span className="md:hidden">{t.short}</span>
               <span className="hidden md:inline">{t.label}</span>
-            </dt>
-            <dd className="flex min-w-0 items-baseline gap-2">
-              <span className={cn('whitespace-nowrap text-[22px] font-black leading-tight tabular-nums md:text-[26px]', t.warn && 'text-ivancar-yellow')} data-testid={`kpi-${t.id}-value`}>
+            </p>
+            <p className="flex min-w-0 items-baseline gap-2">
+              <span
+                className={cn('whitespace-nowrap text-[22px] font-black leading-tight tabular-nums md:text-[26px]', t.warn && 'text-ivancar-yellow')}
+                data-testid={`kpi-${t.id}-value`}
+              >
                 {t.value}
               </span>
               <span className="hidden truncate text-[11.5px] text-fg-55 sm:inline">{t.hint}</span>
-            </dd>
+            </p>
           </div>
-        </div>
+        </li>
       ))}
-    </dl>
+    </ul>
   );
 }
 

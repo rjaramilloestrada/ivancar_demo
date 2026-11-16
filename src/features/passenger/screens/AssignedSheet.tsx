@@ -161,21 +161,22 @@ function ActionButton({
     <button
       type="button"
       onClick={onClick}
-      aria-label={badge ? `${label}, ${badge} ${badge === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}` : undefined}
       className={cn(actionClass, 'relative', tone === 'danger' && 'text-danger')}
       data-testid={testId}
     >
       {icon}
       {label}
+      {/* El nombre accesible sale del contenido ("Chat, 1 mensaje nuevo"): incluye el texto visible. */}
+      {badge > 0 && <span className="sr-only">,</span>}
       {badge > 0 && (
         <span
-          aria-hidden
           className="absolute right-3 top-2 grid min-w-5 place-items-center rounded-full bg-ivancar-yellow px-1 text-[11px] font-black leading-5 text-on-yellow"
           data-testid="chat-unread"
         >
           {badge}
         </span>
       )}
+      {badge > 0 && <span className="sr-only">{badge === 1 ? ' mensaje nuevo' : ' mensajes nuevos'}</span>}
     </button>
   );
 }

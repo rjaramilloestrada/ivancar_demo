@@ -124,20 +124,27 @@ function TripCard({ trip: t, now, onOpen, recent }: { trip: TripHistoryItem; now
         data-trip-id={t.id}
         onClick={() => onOpen(t.id)}
         className="flex w-full items-stretch gap-3 rounded-[20px] border border-line bg-surface-raised/40 p-2.5 text-left transition-colors hover:border-line-strong"
-        aria-label={`Viaje ${relativeDate(t.completed_at ?? t.created_at, now)}, de ${t.pickup_label} a ${t.dropoff_label}, ${formatUSD(total(t))}. Ver detalle`}
       >
         <MiniRouteMap route={t.route} width={84} height={96} />
         <span className="flex min-w-0 flex-1 flex-col justify-between py-0.5 pr-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[12px] font-semibold text-fg-65">
-              {recent && <span className="mr-1.5 text-ivancar-yellow">●</span>}
+              {recent && (
+                <span aria-hidden className="mr-1.5 text-ivancar-yellow">
+                  ●
+                </span>
+              )}
               {relativeDate(t.completed_at ?? t.created_at, now)}
             </span>
             <span className="shrink-0 text-[16px] font-black tabular-nums">{formatUSD(total(t))}</span>
           </span>
           <span className="mt-1 flex min-w-0 flex-col gap-0.5 text-[14px] leading-tight">
-            <span className="truncate font-semibold">{t.pickup_label}</span>
+            <span className="truncate font-semibold">
+              <span className="sr-only">De </span>
+              {t.pickup_label}
+            </span>
             <span className="flex min-w-0 items-center gap-1 text-fg-80">
+              <span className="sr-only">a </span>
               <IconArrowRight size={13} className="shrink-0 text-ivancar-yellow" />
               <span className="truncate font-semibold" data-testid="trip-dropoff">
                 {t.dropoff_label}
@@ -151,6 +158,7 @@ function TripCard({ trip: t, now, onOpen, recent }: { trip: TripHistoryItem; now
           </span>
           <span className="truncate text-[10.5px] text-fg-55">
             {service.name} · {DEMO_FARE_NOTICE}
+            <span className="sr-only">. Ver detalle</span>
           </span>
         </span>
       </button>
