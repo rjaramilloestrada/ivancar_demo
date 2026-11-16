@@ -1,5 +1,4 @@
 import '@fontsource-variable/inter';
-import '@fontsource-variable/inter/wght-italic.css';
 import './index.css';
 
 import { MotionConfig } from 'motion/react';

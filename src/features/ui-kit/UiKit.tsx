@@ -1,3 +1,4 @@
+import '@fontsource-variable/inter/wght-italic.css';
 import { useState, type ReactNode } from 'react';
 import { AppHeader } from '@/components/brand/AppHeader';
 import { DemoBanner } from '@/components/brand/DemoBanner';

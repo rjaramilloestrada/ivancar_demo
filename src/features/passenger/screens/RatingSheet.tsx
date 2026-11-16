@@ -84,21 +84,26 @@ export function RatingSheet() {
           <legend id={ids.tip} className="text-[16px] font-bold">
             Propina <span className="font-normal text-fg-55">(opcional)</span>
           </legend>
-          <div className="mt-2 grid grid-cols-4 gap-2" role="radiogroup" aria-labelledby={ids.tip}>
+          <div className="mt-2 grid grid-cols-4 gap-2">
             {TIPS.map((t) => (
-              <button
+              <label
                 key={t}
-                type="button"
-                role="radio"
-                aria-checked={tip === t}
-                onClick={() => setTip(t)}
                 className={cn(
-                  'h-11 rounded-full border text-[15px] font-bold tabular-nums transition-colors',
+                  'grid h-11 cursor-pointer place-items-center rounded-full border text-[15px] font-bold tabular-nums transition-colors',
+                  'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ivancar-yellow',
                   tip === t ? 'border-ivancar-yellow bg-ivancar-yellow text-on-yellow' : 'border-line-strong text-fg-80 hover:border-fg-55',
                 )}
               >
+                <input
+                  type="radio"
+                  name={ids.tip}
+                  value={t}
+                  checked={tip === t}
+                  onChange={() => setTip(t)}
+                  className="sr-only"
+                />
                 {t === 0 ? 'No' : formatUSD(t)}
-              </button>
+              </label>
             ))}
           </div>
         </fieldset>

@@ -181,7 +181,7 @@ export function MapView({
       maxBounds: MAX_BOUNDS,
       maxBoundsViscosity: 0.8,
       worldCopyJump: false,
-      keyboard: interactive,
+      keyboard: false, // el mapa no entra al orden de Tab (se opera con puntero)
       dragging: interactive,
       touchZoom: interactive,
       scrollWheelZoom: interactive,
@@ -189,6 +189,10 @@ export function MapView({
       boxZoom: false,
     });
     L.control.attribution({ prefix: false, position: 'bottomright' }).addTo(map);
+    // Los enlaces de atribución siguen siendo clicables, pero no entran al orden de Tab.
+    const untabAttribution = () =>
+      map.getContainer().querySelectorAll('.leaflet-control-attribution a').forEach((a) => a.setAttribute('tabindex', '-1'));
+    map.on('layeradd layerremove', untabAttribution);
     // El centro inicial va al centro del área visible, no al del contenedor.
     const o0 = visibleOffset(insetsRef.current);
     if (o0.x || o0.y) map.setView(map.unproject(map.project(center, zoom).subtract([o0.x, o0.y]), zoom), zoom, { animate: false });
@@ -371,7 +375,7 @@ export function MapView({
       data-tile-status={status}
       className={cn('absolute inset-0 isolate overflow-hidden bg-[#0e0e0f]', className)}
     >
-      <div ref={elRef} role="region" aria-label={ariaLabel} className="iv-map absolute inset-0 z-0" />
+      <div ref={elRef} role="region" aria-label={ariaLabel} tabIndex={-1} className="iv-map absolute inset-0 z-0" />
 
       {showStatus && (
         <MapBackdrop

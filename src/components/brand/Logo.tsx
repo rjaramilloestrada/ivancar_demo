@@ -7,12 +7,14 @@ export interface LogoProps {
   className?: string;
 }
 
-/** Logo oficial IVANCAR (versión WebP de 700 px generada desde ivancarlogo.png). */
+/** Logo oficial IVANCAR (WebP de 220 y 440 px generados desde ivancarlogo.png). */
 export function Logo({ height = 28, className }: LogoProps) {
   const width = Math.round((height * 1412) / 287);
   return (
     <img
-      src={asset('img/ivancarlogo-700.webp')}
+      src={asset('img/ivancarlogo-440.webp')}
+      srcSet={`${asset('img/ivancarlogo-220.webp')} 220w, ${asset('img/ivancarlogo-440.webp')} 440w`}
+      sizes={`${width}px`}
       alt="IVANCAR"
       width={width}
       height={height}
