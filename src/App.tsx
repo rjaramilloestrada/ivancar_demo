@@ -1,0 +1,40 @@
+import { lazy, Suspense } from 'react';
+import { HashRouter, Navigate, Route, Routes } from 'react-router';
+import { Logo } from '@/components/brand/Logo';
+import PassengerHome from '@/features/passenger/PassengerHome';
+
+// Vistas secundarias en chunks aparte: el pasajero (móvil) carga solo lo suyo.
+const CentralPlaceholder = lazy(() => import('@/features/central/CentralPlaceholder'));
+const SplitDemo = lazy(() => import('@/features/demo/SplitDemo'));
+const UiKit = lazy(() => import('@/features/ui-kit/UiKit'));
+
+/**
+ * Rutas (HashRouter, porque GitHub Pages no reescribe rutas SPA):
+ *   #/         app del pasajero
+ *   #/central  central de despacho
+ *   #/demo     teléfono + central lado a lado (presentación)
+ *   #/ui       catálogo interno de componentes
+ */
+export default function App() {
+  return (
+    <HashRouter>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/" element={<PassengerHome />} />
+          <Route path="/central" element={<CentralPlaceholder />} />
+          <Route path="/demo" element={<SplitDemo />} />
+          <Route path="/ui" element={<UiKit />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </HashRouter>
+  );
+}
+
+function RouteFallback() {
+  return (
+    <div role="status" aria-label="Cargando" className="grid min-h-dvh place-items-center bg-ivancar-black">
+      <Logo height={32} className="opacity-80" />
+    </div>
+  );
+}

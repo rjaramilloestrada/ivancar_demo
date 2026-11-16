@@ -1,0 +1,27 @@
+# dependencias y builds
+node_modules/
+dist/
+dev-dist/
+*.tsbuildinfo
+.vite/
+
+# originales pesados (los descarga scripts/build-assets.mjs)
+assets-src/
+
+# entorno
+.env
+.env.*
+!.env.example
+
+# logs y sistema
+npm-debug.log*
+*.log
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# pruebas
+playwright-report/
+test-results/

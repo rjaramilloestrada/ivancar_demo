@@ -1,0 +1,146 @@
+@import 'tailwindcss';
+
+/*
+ * Tokens IVANCAR (PLAN_IVANCAR.md §7.2, medidos en ivancar-ec.com).
+ * Cada --color-* genera utilidades: bg-*, text-*, border-*, ring-*, fill-*…
+ *   bg-ivancar-yellow  text-ivancar-yellow  bg-ivancar-black  bg-surface  bg-surface-raised
+ *   text-fg  text-fg-80  text-fg-75  text-fg-65  text-fg-55
+ *   border-line  border-line-strong  bg-header  text-on-yellow
+ */
+@theme {
+  /* Marca */
+  --color-ivancar-yellow: #f6c90e;
+  --color-ivancar-yellow-soft: #ffd84a; /* hover / brillo */
+  --color-ivancar-black: #050505;
+  --color-on-yellow: #000000;
+
+  /* Superficies */
+  --color-surface: #0c0c0c;
+  --color-surface-raised: #151515;
+  --color-header: rgb(0 0 0 / 0.85);
+
+  /* Texto */
+  --color-fg: #ffffff;
+  --color-fg-80: rgb(255 255 255 / 0.8);
+  --color-fg-75: rgb(255 255 255 / 0.75);
+  --color-fg-65: rgb(255 255 255 / 0.65);
+  --color-fg-55: rgb(255 255 255 / 0.55);
+
+  /* Bordes */
+  --color-line: rgb(255 255 255 / 0.1);
+  --color-line-strong: rgb(255 255 255 / 0.15);
+
+  /* Estados */
+  --color-success: #3ddc84;
+  --color-danger: #ff5a4f;
+
+  /* Tipografía */
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* Radios */
+  --radius-card: 24px;
+  --radius-hero: 32px;
+  --radius-sheet: 28px;
+
+  /* Sombras */
+  --shadow-glow: 0 0 0 1px rgb(246 201 14 / 0.55), 0 10px 40px -8px rgb(246 201 14 / 0.45);
+  --shadow-sheet: 0 -12px 40px rgb(0 0 0 / 0.6);
+
+  /* Curvas */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Animaciones */
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-pulse-dot: pulse-dot 1.8s var(--ease-out-expo) infinite;
+
+  @keyframes shimmer {
+    from {
+      background-position: 150% 0;
+    }
+    to {
+      background-position: -50% 0;
+    }
+  }
+  @keyframes pulse-dot {
+    0% {
+      box-shadow: 0 0 0 0 rgb(246 201 14 / 0.6);
+    }
+    70%,
+    100% {
+      box-shadow: 0 0 0 10px rgb(246 201 14 / 0);
+    }
+  }
+}
+
+/* Título de marca: Inter 900 en mayúsculas (32-40 px en móvil). */
+@utility title-display {
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
+}
+
+/* Texto pequeño en mayúsculas con tracking amplio (eyebrows, etiquetas). */
+@utility label-caps {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+
+/* Espaciado inferior respetando el home indicator de iOS. */
+@utility pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--color-ivancar-black);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+  ::selection {
+    background: var(--color-ivancar-yellow);
+    color: var(--color-on-yellow);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-ivancar-yellow);
+    outline-offset: 3px;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: default;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
