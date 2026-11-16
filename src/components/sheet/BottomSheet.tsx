@@ -33,6 +33,11 @@ export interface BottomSheetProps {
   defaultSnap?: SheetSnap;
   /** Se llama cuando el usuario cambia de snap (arrastre, toque o teclado). */
   onSnapChange?: (snap: SheetSnap) => void;
+  /**
+   * Alto visible (px) del snap actual, para que el mapa descuente la zona tapada
+   * (MapView `insets.bottom`). Se llama al medir y cada vez que cambia.
+   */
+  onHeightChange?: (height: number, snap: SheetSnap) => void;
   /** Zona siempre visible bajo el asa (forma parte del peek). También sirve para arrastrar. */
   header?: ReactNode;
   /** Contenido principal. En 'full' hace scroll si no cabe. */
@@ -68,6 +73,7 @@ export function BottomSheet({
   snap: snapProp,
   defaultSnap = 'half',
   onSnapChange,
+  onHeightChange,
   header,
   children,
   footer,
@@ -220,6 +226,13 @@ export function BottomSheet({
     const sheetBottom = sheetRef.current?.parentElement?.getBoundingClientRect().bottom ?? window.innerHeight;
     if (el.getBoundingClientRect().bottom > sheetBottom - m.footer) setSnap('full');
   };
+
+  const onHeightRef = useRef(onHeightChange);
+  onHeightRef.current = onHeightChange;
+  const effectiveHeight = heights[effective];
+  useLayoutEffect(() => {
+    if (measured) onHeightRef.current?.(effectiveHeight, effective);
+  }, [measured, effectiveHeight, effective]);
 
   const label: Record<SheetSnap, string> = { peek: 'contraído', half: 'a media altura', full: 'expandido' };
   const nextLabel = distinct[(distinct.indexOf(effective) + 1) % distinct.length];

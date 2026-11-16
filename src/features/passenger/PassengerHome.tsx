@@ -1,8 +1,7 @@
-import { motion } from 'motion/react';
 import { useState } from 'react';
 import { DemoBanner } from '@/components/brand/DemoBanner';
 import { Logo } from '@/components/brand/Logo';
-import { MapBackdrop } from '@/components/map/MapBackdrop';
+import { DraggablePin, MapView } from '@/components/map';
 import { BottomSheet, type SheetSnap } from '@/components/sheet/BottomSheet';
 import {
   Button,
@@ -10,39 +9,44 @@ import {
   Eyebrow,
   IconArrowRight,
   IconPhone,
-  IconPin,
   IconSearch,
   IconWhatsApp,
   Skeleton,
   useToast,
 } from '@/components/ui';
+import { useAddress } from '@/lib/geocode';
 import { greeting } from '@/lib/greeting';
 import { telHref, whatsappHref } from '@/lib/links';
+import type { LatLng } from '@/types';
+
+/** Alto aproximado de la barra superior flotante + banner de demo (px), sin safe-area. */
+const TOP_CHROME = 112;
 
 /**
- * Vista pasajero (placeholder del bloque 1).
- * El bloque 2 reemplaza MapBackdrop por MapView y el bloque 3 monta aquí el flujo P1–P8.
+ * Vista pasajero: mapa real con pin de recogida arrastrable (bloque 2).
+ * El bloque 3 monta aquí el flujo P1–P8 (store, destino, servicio, pedido).
  */
 export default function PassengerHome() {
   const toast = useToast();
   const [snap, setSnap] = useState<SheetSnap>('half');
+  const [sheetH, setSheetH] = useState(0);
+  const [pickup, setPickup] = useState<LatLng | null>(null);
+  const [moving, setMoving] = useState(false);
+  const address = useAddress(moving ? null : pickup);
 
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-ivancar-black">
-      <MapBackdrop />
-
-      {/* Pin de recogida */}
-      <div className="pointer-events-none absolute inset-x-0 top-[34%] flex -translate-y-1/2 flex-col items-center">
-        <motion.div
-          initial={{ y: -24, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 420, damping: 18, delay: 0.25 }}
-          className="grid size-12 place-items-center rounded-full bg-ivancar-yellow text-on-yellow shadow-glow"
-        >
-          <IconPin size={24} />
-        </motion.div>
-        <span className="mt-1 h-2 w-4 rounded-[50%] bg-black/70 blur-[2px]" />
-      </div>
+      <MapView aria-label="Mapa: mueve el mapa para elegir el punto de recogida" insets={{ top: TOP_CHROME, bottom: sheetH }}>
+        <DraggablePin
+          onMoveStart={() => setMoving(true)}
+          onMoveEnd={(ll) => {
+            setPickup(ll);
+            setMoving(false);
+          }}
+          label={address?.title}
+          sublabel={address?.subtitle}
+        />
+      </MapView>
 
       {/* Barra superior flotante */}
       <div className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-4 pt-[max(14px,env(safe-area-inset-top))]">
@@ -61,6 +65,8 @@ export default function PassengerHome() {
         aria-label="Pedir taxi"
         snap={snap}
         onSnapChange={setSnap}
+        // En 'full' el mapa queda detrás del velo: se conserva el último alto útil.
+        onHeightChange={(h, s) => s !== 'full' && setSheetH(h)}
         header={
           <div>
             <p className="text-sm font-medium text-fg-65">{greeting()},</p>

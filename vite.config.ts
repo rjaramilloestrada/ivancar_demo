@@ -48,8 +48,8 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            // Tiles CARTO Dark Matter (bloque 2)
-            urlPattern: /^https:\/\/[a-d]\.basemaps\.cartocdn\.com\/.*/,
+            // Tiles del mapa (bloque 2): Esri Dark Gray Canvas (y CARTO si se configura con clave)
+            urlPattern: /^https:\/\/(server\.arcgisonline\.com\/ArcGIS\/rest\/services\/Canvas\/|[a-d]\.basemaps\.cartocdn\.com\/)/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',
@@ -64,5 +64,18 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+    rolldownOptions: {
+      output: {
+        // Librerías en chunks propios: cachean aparte del código de la app y ningún
+        // chunk pasa de 500 kB. Todas se cargan en la home, en paralelo.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/, priority: 3 },
+            { name: 'leaflet', test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/, priority: 2 },
+            { name: 'motion', test: /node_modules[\\/](motion|motion-dom|motion-utils|framer-motion)[\\/]/, priority: 1 },
+          ],
+        },
+      },
+    },
   },
 });

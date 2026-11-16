@@ -7,6 +7,7 @@ import PassengerHome from '@/features/passenger/PassengerHome';
 const CentralPlaceholder = lazy(() => import('@/features/central/CentralPlaceholder'));
 const SplitDemo = lazy(() => import('@/features/demo/SplitDemo'));
 const UiKit = lazy(() => import('@/features/ui-kit/UiKit'));
+const MapLab = lazy(() => import('@/features/map-lab/MapLab'));
 
 /**
  * Rutas (HashRouter, porque GitHub Pages no reescribe rutas SPA):
@@ -14,6 +15,7 @@ const UiKit = lazy(() => import('@/features/ui-kit/UiKit'));
  *   #/central  central de despacho
  *   #/demo     teléfono + central lado a lado (presentación)
  *   #/ui       catálogo interno de componentes
+ *   #/map-lab  banco de pruebas interno del mapa
  */
 export default function App() {
   return (
@@ -24,6 +26,7 @@ export default function App() {
           <Route path="/central" element={<CentralPlaceholder />} />
           <Route path="/demo" element={<SplitDemo />} />
           <Route path="/ui" element={<UiKit />} />
+          <Route path="/map-lab" element={<MapLab />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

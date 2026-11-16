@@ -2,11 +2,12 @@
 
 ## Contexto
 
-Rafa entregó `PLAN_IVANCAR.md` (IGNIS, 16-nov-2026): un demo PWA simulado, sin backend, para pedir taxis IVANCAR, con vista pasajero (P1 a P9) y panel central de despacho. Debe verse como producto terminado, con la marca de ivancar-ec.com y la capa de animación IGNIS, y servir de base para la Fase 1.
+`PLAN_IVANCAR.md` (IGNIS, 16-nov-2026) define un demo PWA simulado, sin backend, para pedir taxis IVANCAR, con vista pasajero (P1 a P9) y panel central de despacho. Debe verse como producto terminado, con la marca de ivancar-ec.com y la capa de animación IGNIS, y servir de base para la Fase 1.
 
 Estado verificado hoy:
-- Repo `rjaramilloestrada/ivancar_demo` está vacío (solo `README.md`). Se usa este repo, no uno nuevo `demo-ivancar`. Rama de trabajo: `claude/ivancar-taxi-pwa-demo-659lpa`.
-- Los 5 assets de ivancar-ec.com responden 200 desde este contenedor. Los tiles CARTO Dark Matter también.
+- Se usa el repo `ivancar_demo` (estaba vacío, solo `README.md`), no uno nuevo `demo-ivancar`. Se trabaja en una rama y se publica al hacer merge a la rama por defecto.
+- Los 5 assets de ivancar-ec.com responden 200 desde el entorno de desarrollo.
+- Tiles: CARTO Dark Matter responde 200 pero con marca de agua "API KEY REQUIRED" (verificado en el bloque 2). Se usa Esri World Dark Gray Canvas (sin clave, con atribución); el proveedor se cambia en `src/theme/tokens.ts`.
 - Node 22, npm 10. Versiones actuales en npm: vite 8.3, react 19.3, tailwindcss 4.3, motion 14, react-leaflet 5, leaflet 1.9.4, zustand 5.1, vite-plugin-pwa 2.0, react-router 8.5.
 
 ## Ajustes al plan original (y por qué)
@@ -18,19 +19,11 @@ Estado verificado hoy:
 5. **Dirección del pin**: etiqueta local primero (sector o lugar conocido más cercano, instantánea). Nominatim (OSM) como mejora con debounce, si responde.
 6. **Ruta**: se intenta OSRM público con timeout de 2 s. Si falla, línea curva entre puntos. La animación del auto funciona igual en ambos casos.
 
-7. **Deploy en GitHub Pages, no Vercel** (decisión de Rafa). Consecuencias técnicas:
+7. **Deploy en GitHub Pages, no Vercel**. Consecuencias técnicas:
    - `base: '/ivancar_demo/'` en Vite. Manifest con `start_url` y `scope` relativos. Rutas de assets siempre vía `import.meta.env.BASE_URL`.
    - Pages no reescribe rutas SPA: se usa `HashRouter` (`#/central`, `#/demo`). No hay `vercel.json`.
    - Workflow `.github/workflows/deploy.yml` (build + `actions/deploy-pages`), con disparo en la rama por defecto y `workflow_dispatch`.
-   - URL final: `https://rjaramilloestrada.github.io/ivancar_demo/`.
-
-## Quién ejecuta (decisión de Rafa)
-
-- Esta sesión solo orquesta: no escribe código ni corre comandos de construcción.
-- Cada bloque lo ejecuta un agente con **Opus 5.5** (`Agent` con `model: "opus"`), uno a la vez y en orden, porque cada bloque depende del anterior. Cada agente recibe este plan, `PLAN_IVANCAR.md` y el estado del repo, y termina con commit y push a la rama.
-- Si un agente necesita subagentes (búsquedas, verificaciones), van en **Haiku** (`model: "haiku"`).
-- Entre bloques, la orquestación solo lee el reporte del agente y decide si sigue o si manda una corrección al mismo agente.
-- Primer paso del Bloque 1: guardar `PLAN_IVANCAR.md` en el repo, para que todos los agentes lo lean de ahí.
+   - URL final: `https://<usuario>.github.io/ivancar_demo/`.
 
 ## Stack
 
@@ -81,7 +74,7 @@ Un commit por bloque, push a la rama al final de cada uno.
 - Estados vacíos, de carga y de error (sin geolocalización, sin red para tiles). Revisión de copy contra su web.
 - README con cómo correr, qué es simulado y guion de demo de 60 s.
 - Lighthouse y correcciones hasta ≥ 90 en Performance y Accessibility.
-- Workflow de GitHub Pages listo en el repo (ver "Necesita a Rafa").
+- Workflow de GitHub Pages listo en el repo (ver "Pasos manuales").
 
 ## Verificación
 
@@ -93,14 +86,14 @@ Un commit por bloque, push a la rama al final de cada uno.
 - Lighthouse móvil sobre `vite preview` (con el `base` de Pages, para detectar rutas rotas antes de publicar).
 - Comparación visual: captura de la app junto a captura de ivancar-ec.com.
 
-## Lo que no puedo cerrar desde aquí
+## Lo que no se cierra desde el entorno de desarrollo
 
-- Prueba en Android y iPhone reales e instalación como PWA (paso 12): lo hace Rafa con la URL de GitHub Pages. Yo dejo checklist.
+- Prueba en Android y iPhone reales e instalación como PWA (paso 12): manual, con la URL de GitHub Pages. Se deja checklist.
 - "Prueba de los 5 segundos" con una persona.
-- Video del outreach: puedo generar una grabación de pantalla automática con Playwright como borrador. El video final conviene grabarlo en un teléfono real.
+- Video del outreach: se puede generar una grabación de pantalla automática con Playwright como borrador. El video final conviene grabarlo en un teléfono real.
 
-## Necesita a Rafa
+## Pasos manuales
 
 - **GitHub Pages**: activar una vez en el repo, Settings → Pages → Source: "GitHub Actions". Si el repo es privado, Pages requiere plan de pago de GitHub o hacer el repo público.
-- **Publicar**: Pages despliega desde la rama por defecto, así que al final hace falta un PR y merge de la rama de trabajo. Lo pido en ese momento, no antes.
+- **Publicar**: Pages despliega desde la rama por defecto, así que al final hace falta un PR y merge de la rama de trabajo. Se hace en ese momento, no antes.
 - Pendientes 3 y 4 de la sección 10 (a quién se presenta, datos para cotizar) no bloquean la construcción.
