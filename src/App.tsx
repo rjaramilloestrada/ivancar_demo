@@ -8,6 +8,7 @@ const CentralPlaceholder = lazy(() => import('@/features/central/CentralPlacehol
 const SplitDemo = lazy(() => import('@/features/demo/SplitDemo'));
 const UiKit = lazy(() => import('@/features/ui-kit/UiKit'));
 const MapLab = lazy(() => import('@/features/map-lab/MapLab'));
+const FxLab = lazy(() => import('@/features/fx-lab/FxLab'));
 
 /**
  * Rutas (HashRouter, porque GitHub Pages no reescribe rutas SPA):
@@ -16,6 +17,7 @@ const MapLab = lazy(() => import('@/features/map-lab/MapLab'));
  *   #/demo     teléfono + central lado a lado (presentación)
  *   #/ui       catálogo interno de componentes
  *   #/map-lab  banco de pruebas interno del mapa
+ *   #/fx-lab   catálogo interno de la capa de animación
  */
 export default function App() {
   return (
@@ -27,6 +29,7 @@ export default function App() {
           <Route path="/demo" element={<SplitDemo />} />
           <Route path="/ui" element={<UiKit />} />
           <Route path="/map-lab" element={<MapLab />} />
+          <Route path="/fx-lab" element={<FxLab />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
