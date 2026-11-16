@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router';
+import { Link, useHashParams } from '@/lib/hashRouter';
 import {
   AnimatedCar,
   DestinationMarker,
@@ -33,7 +33,7 @@ import { toLatLng, type LatLng } from '@/types';
  * Expone data-* para las pruebas automáticas.
  */
 export default function MapLab() {
-  const [params] = useSearchParams();
+  const params = useHashParams();
   const role: ChannelRole = params.get('role') === 'central' ? 'central' : 'passenger';
   const mapRef = useRef<MapViewHandle>(null);
   const carRef = useRef<AnimatedCarHandle>(null);

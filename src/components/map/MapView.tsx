@@ -154,6 +154,7 @@ export function MapView({
   const elRef = useRef<HTMLDivElement>(null);
   const [ctx, setCtx] = useState<LeafletContextInterface | null>(null);
   const tilesRef = useRef<L.TileLayer | null>(null);
+  const labelsRef = useRef<L.TileLayer | null>(null);
   const [status, setStatus] = useState<TileStatus>('loading');
   const [everLoaded, setEverLoaded] = useState(false);
 
@@ -221,6 +222,7 @@ export function MapView({
       internalMove.current = false;
       introTarget.current = null;
       clearTimeout(introTimer);
+      for (const l of [tilesRef.current, labelsRef.current]) if (l) l.options.updateWhenZooming = true;
       map.fire('iv:introend');
     };
     if (withIntro) {
@@ -250,6 +252,9 @@ export function MapView({
       detectRetina: false, // con {r} ya se piden tiles @2x; sin {r}, mejor nítido a escala 1
       errorTileUrl: EMPTY_TILE,
       keepBuffer: 3,
+      // Durante la entrada no se piden tiles de cada nivel intermedio: la ciudad se amplía
+      // y al aterrizar entran los tiles nítidos del destino (menos red en el arranque).
+      updateWhenZooming: !withIntro,
     };
     const tiles = L.tileLayer(provider.url, { ...tileOpts, attribution: provider.attribution, className: 'iv-tiles' });
     const labels = provider.labelsUrl ? L.tileLayer(provider.labelsUrl, { ...tileOpts, className: 'iv-tiles-labels' }) : null;
@@ -279,6 +284,7 @@ export function MapView({
     tiles.addTo(map);
     labels?.addTo(map);
     tilesRef.current = tiles;
+    labelsRef.current = labels;
 
     // Si en 12 s no cargó nada, se considera error (red colgada).
     const slow = setTimeout(() => {

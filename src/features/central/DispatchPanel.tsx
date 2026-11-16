@@ -276,21 +276,43 @@ function MapLegend() {
 
 /* ------------------------------------------------------- Anuncios accesibles */
 
-/** Región `aria-live` discreta: pedidos nuevos desde la app y alertas. */
+/**
+ * Región `aria-live` discreta: pedidos nuevos desde la app y alertas. Cada anuncio se
+ * mantiene al menos ANNOUNCE_MS antes del siguiente (en cola), para que un lector de
+ * pantalla alcance a leerlo aunque una alerta llegue justo después.
+ */
+const ANNOUNCE_MS = 3000;
 function LiveAnnouncer() {
   const [msg, setMsg] = useState('');
-  useEffect(
-    () =>
-      dispatchEvents.on((e) => {
-        if (e.type === 'order_received' && e.order.source === 'app') {
-          setMsg(`Pedido nuevo desde la app, número ${orderCode(e.order.id)}: de ${e.order.ride.pickup_label} a ${e.order.ride.dropoff_label}.`);
-        } else if (e.type === 'alert_raised') {
-          const o = useDispatch.getState().orders.find((x) => x.id === e.alert.order_id);
-          if (o) setMsg(`Alerta: pedido ${orderCode(o.id)} ${e.alert.kind === 'unassigned' ? 'sin unidad asignada' : 'con la unidad detenida'}.`);
-        }
-      }),
-    [],
-  );
+  useEffect(() => {
+    const queue: string[] = [];
+    let busyUntil = 0;
+    let timer = 0;
+    const pump = () => {
+      timer = 0;
+      const next = queue.shift();
+      if (next == null) return;
+      setMsg(next);
+      busyUntil = Date.now() + ANNOUNCE_MS;
+      if (queue.length) timer = window.setTimeout(pump, ANNOUNCE_MS);
+    };
+    const say = (text: string) => {
+      queue.push(text);
+      if (!timer) timer = window.setTimeout(pump, Math.max(0, busyUntil - Date.now()));
+    };
+    const off = dispatchEvents.on((e) => {
+      if (e.type === 'order_received' && e.order.source === 'app') {
+        say(`Pedido nuevo desde la app, número ${orderCode(e.order.id)}: de ${e.order.ride.pickup_label} a ${e.order.ride.dropoff_label}.`);
+      } else if (e.type === 'alert_raised') {
+        const o = useDispatch.getState().orders.find((x) => x.id === e.alert.order_id);
+        if (o) say(`Alerta: pedido ${orderCode(o.id)} ${e.alert.kind === 'unassigned' ? 'sin unidad asignada' : 'con la unidad detenida'}.`);
+      }
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, []);
   return (
     <p className="sr-only" aria-live="polite" aria-atomic="true" data-testid="central-live">
       {msg}

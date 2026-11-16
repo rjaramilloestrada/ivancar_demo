@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link } from '@/lib/hashRouter';
 import { DemoBanner } from '@/components/brand/DemoBanner';
 import { Logo } from '@/components/brand/Logo';
 import { Eyebrow, IconArrowRight, useToast } from '@/components/ui';

@@ -623,6 +623,7 @@ const SCENARIOS = {
   async sizes(browser) {
     for (const [w, h] of [
       [360, 740],
+      [390, 844],
       [430, 932],
     ]) {
       const tag = `${w}x${h}`;
@@ -642,6 +643,12 @@ const SCENARIOS = {
       await stepIs(page, 'assigned', 10_000);
       await sleep(800);
       await shot(page, `${tag}-p6`);
+      // Unidad asignada: Llamar / Chat / Cancelar completos sobre el pie fijo, sin arrastrar.
+      const acts = await page.evaluate(() => {
+        const foot = document.querySelector('[data-testid=share-trip]')?.parentElement?.closest('.absolute')?.getBoundingClientRect().top ?? 0;
+        return ['call-driver', 'chat-driver', 'cancel-ride'].map((id) => document.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect().bottom ?? 1e9).map((b) => [Math.round(b), Math.round(foot)]);
+      });
+      check(`[${tag}] Llamar / Chat / Cancelar visibles y tocables sin arrastrar`, acts.every(([b, f]) => b <= f), JSON.stringify(acts));
       await stepIs(page, 'inTrip', 15_000);
       await sleep(1500); // deja terminar el encuadre del mapa
       await shot(page, `${tag}-p7`);

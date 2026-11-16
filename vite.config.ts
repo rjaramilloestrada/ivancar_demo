@@ -3,6 +3,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { map as mapTokens } from './src/theme/tokens.ts';
 
 // GitHub Pages sirve el sitio en https://<usuario>.github.io/ivancar_demo/
 const BASE = '/ivancar_demo/';
@@ -20,16 +21,37 @@ function preloadInter(): Plugin {
         // Solo en la primera visita: con el service worker activo la fuente sale de la caché
         // al instante y un preload extra queda "sin usar" (aviso en consola).
         const href = `${BASE}${file}`;
+        // Tile central de la vista de entrada (Guayaquil completo): se pide desde el HTML, sin
+        // esperar a Leaflet, cuando la app va a hacer la entrada animada (sin pedido en curso,
+        // sin ?sim= y sin reduced motion; mismas condiciones que PassengerApp).
+        const tiles = introTiles().map((u) => JSON.stringify(u)).join(',');
+        const pre = (attrs: string) => `var l=document.createElement('link');${attrs}document.head.appendChild(l);`;
         return [
           {
             tag: 'script',
-            children: `if(!(navigator.serviceWorker&&navigator.serviceWorker.controller)){var l=document.createElement('link');l.rel='preload';l.as='font';l.type='font/woff2';l.crossOrigin='';l.href='${href}';document.head.appendChild(l)}`,
+            children:
+              `(function(){try{if(!(navigator.serviceWorker&&navigator.serviceWorker.controller)){${pre(`l.rel='preload';l.as='font';l.type='font/woff2';l.crossOrigin='';l.href='${href}';`)}}` +
+              `var h=location.hash||'',st='';try{st=sessionStorage.getItem('ivancar-ride')||''}catch(e){}` +
+              `if((h===''||h==='#/'||h==='#')&&!/[?&]sim=/.test(location.href)&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!/"pickup":\{/.test(st)){` +
+              `[${tiles}].forEach(function(u){${pre(`l.rel='preload';l.as='image';l.href=u;`)}})}}catch(e){}})()`,
             injectTo: 'head',
           },
         ];
       },
     },
   };
+}
+
+/** URLs (base y etiquetas) del tile que queda en el centro de la vista de entrada. */
+function introTiles(): string[] {
+  const [lat, lng] = mapTokens.cityCenter;
+  const z = mapTokens.cityZoom;
+  const n = 2 ** z;
+  const x = Math.floor(((lng + 180) / 360) * n);
+  const r = (lat * Math.PI) / 180;
+  const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+  const fill = (u: string) => u.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
+  return [mapTokens.tiles.url, mapTokens.tiles.labelsUrl].filter((u): u is string => !!u && !u.includes('{s}')).map(fill);
 }
 
 export default defineConfig({
@@ -78,6 +100,9 @@ export default defineConfig({
           '**/img/conductores-*.webp',
           // Alfabetos que casi no se usan (latin-ext también): se cargan por red si hacen falta.
           '**/inter-{cyrillic,cyrillic-ext,greek,greek-ext,vietnamese,latin-ext}-*.woff2',
+          // Catálogos internos (#/fx-lab, #/map-lab, #/ui) y su cursiva: solo con red.
+          '**/assets/{FxLab,MapLab,UiKit}-*.{js,css}',
+          '**/inter-*-wght-italic-*.woff2',
         ],
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
@@ -105,7 +130,7 @@ export default defineConfig({
         // chunk pasa de 500 kB. Todas se cargan en la home, en paralelo.
         codeSplitting: {
           groups: [
-            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/, priority: 3 },
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 3 },
             { name: 'leaflet', test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/, priority: 2 },
             { name: 'motion', test: /node_modules[\\/](motion|motion-dom|motion-utils|framer-motion)[\\/]/, priority: 1 },
           ],

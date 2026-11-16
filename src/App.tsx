@@ -1,7 +1,7 @@
-import { lazy, Suspense } from 'react';
-import { HashRouter, Navigate, Route, Routes } from 'react-router';
+import { lazy, Suspense, useEffect, type ComponentType } from 'react';
 import { Logo } from '@/components/brand/Logo';
 import PassengerApp from '@/features/passenger/PassengerApp';
+import { navigate, useHashPath } from '@/lib/hashRouter';
 
 // Vistas secundarias en chunks aparte: el pasajero (móvil) carga solo lo suyo.
 const DispatchPanel = lazy(() => import('@/features/central/DispatchPanel'));
@@ -11,7 +11,7 @@ const MapLab = lazy(() => import('@/features/map-lab/MapLab'));
 const FxLab = lazy(() => import('@/features/fx-lab/FxLab'));
 
 /**
- * Rutas (HashRouter, porque GitHub Pages no reescribe rutas SPA):
+ * Rutas por hash (lib/hashRouter; GitHub Pages no reescribe rutas SPA):
  *   #/         app del pasajero
  *   #/central  central de despacho
  *   #/demo     teléfono + central lado a lado (presentación)
@@ -20,22 +20,28 @@ const FxLab = lazy(() => import('@/features/fx-lab/FxLab'));
  *   #/fx-lab   catálogo interno de la capa de animación
  */
 export default function App() {
+  const path = useHashPath();
+  const known = path in ROUTES;
+  // Ruta desconocida: al pasajero, sin dejar la ruta rota en el historial.
+  useEffect(() => {
+    if (!known) navigate('/', { replace: true });
+  }, [known]);
+  const View = ROUTES[path] ?? PassengerApp;
   return (
-    <HashRouter>
-      <Suspense fallback={<RouteFallback />}>
-        <Routes>
-          <Route path="/" element={<PassengerApp />} />
-          <Route path="/central" element={<DispatchPanel />} />
-          <Route path="/demo" element={<SplitDemo />} />
-          <Route path="/ui" element={<UiKit />} />
-          <Route path="/map-lab" element={<MapLab />} />
-          <Route path="/fx-lab" element={<FxLab />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Suspense>
-    </HashRouter>
+    <Suspense fallback={<RouteFallback />}>
+      <View />
+    </Suspense>
   );
 }
+
+const ROUTES: Record<string, ComponentType> = {
+  '/': PassengerApp,
+  '/central': DispatchPanel,
+  '/demo': SplitDemo,
+  '/ui': UiKit,
+  '/map-lab': MapLab,
+  '/fx-lab': FxLab,
+};
 
 function RouteFallback() {
   return (
