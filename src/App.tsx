@@ -1,7 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { HashRouter, Navigate, Route, Routes } from 'react-router';
 import { Logo } from '@/components/brand/Logo';
-import PassengerHome from '@/features/passenger/PassengerHome';
+import PassengerApp from '@/features/passenger/PassengerApp';
 
 // Vistas secundarias en chunks aparte: el pasajero (móvil) carga solo lo suyo.
 const CentralPlaceholder = lazy(() => import('@/features/central/CentralPlaceholder'));
@@ -22,7 +22,7 @@ export default function App() {
     <HashRouter>
       <Suspense fallback={<RouteFallback />}>
         <Routes>
-          <Route path="/" element={<PassengerHome />} />
+          <Route path="/" element={<PassengerApp />} />
           <Route path="/central" element={<CentralPlaceholder />} />
           <Route path="/demo" element={<SplitDemo />} />
           <Route path="/ui" element={<UiKit />} />

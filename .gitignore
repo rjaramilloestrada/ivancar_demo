@@ -25,3 +25,6 @@ Thumbs.db
 # pruebas
 playwright-report/
 test-results/
+
+# capturas del recorrido E2E (scripts/e2e-passenger.mjs)
+e2e-shots/

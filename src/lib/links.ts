@@ -16,3 +16,8 @@ export function whatsappHref(text?: string): string {
 export function asset(path: string): string {
   return `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`;
 }
+
+/** wa.me sin número: WhatsApp deja elegir el contacto (compartir viaje o ubicación). */
+export function shareWhatsappHref(text: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}

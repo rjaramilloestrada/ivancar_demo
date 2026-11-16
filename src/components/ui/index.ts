@@ -9,3 +9,5 @@ export type { SkeletonProps, SkeletonTextProps } from './Skeleton';
 export { ToastProvider, useToast } from './Toast';
 export type { ToastOptions, ToastTone } from './Toast';
 export * from './icons';
+export { Dialog } from './Dialog';
+export type { DialogProps } from './Dialog';

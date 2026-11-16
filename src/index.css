@@ -144,3 +144,22 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Entrada de los diálogos nativos (components/ui/Dialog.tsx). */
+.iv-dialog[open] > div {
+  animation: iv-dialog-in 0.32s var(--ease-out-expo);
+}
+.iv-dialog[open]::backdrop {
+  animation: iv-fade-in 0.2s ease-out;
+}
+@keyframes iv-dialog-in {
+  from {
+    transform: translateY(24px) scale(0.98);
+    opacity: 0;
+  }
+}
+@keyframes iv-fade-in {
+  from {
+    opacity: 0;
+  }
+}

@@ -262,6 +262,11 @@ export function BottomSheet({
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         style={{ y, height: fullH || undefined, visibility: measured ? 'visible' : 'hidden' }}
+        // overflow-hidden no impide el scroll programático (scrollIntoView, foco): si pasa,
+        // el pie fijo se desplazaría. La sección nunca debe desplazarse.
+        onScroll={(e) => {
+          if (e.currentTarget.scrollTop) e.currentTarget.scrollTop = 0;
+        }}
         className={cn(
           'absolute inset-x-0 bottom-0 z-40 flex flex-col overflow-hidden rounded-t-sheet border-t border-line bg-surface shadow-sheet will-change-transform',
           className,
