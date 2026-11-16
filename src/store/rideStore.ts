@@ -10,7 +10,7 @@ import type { FleetUnit, LatLng, PaymentMethod, Ride, ServiceId, TripHistoryItem
  * Máquina de estados del pedido (pasajero), PLAN_IVANCAR.md §3.1:
  *
  *   home → destination → service ⇄ payment → searching → assigned → inTrip → rating → home
- *   home ⇄ history
+ *   home ⇄ history → service ("Repetir viaje")
  *
  * - Solo se aceptan las transiciones de `TRANSITIONS`; cualquier otra es un no-op que
  *   devuelve `false` (nunca lanza).
@@ -47,7 +47,7 @@ export const TRANSITIONS: Record<Step, readonly Step[]> = {
   assigned: ['inTrip', 'home'],
   inTrip: ['rating'],
   rating: ['home'],
-  history: ['home'],
+  history: ['home', 'service'],
 };
 
 export function canTransition(from: Step, to: Step): boolean {
@@ -97,8 +97,10 @@ export interface RideState {
   /** Reloj de la fase actual (searching / assigned / inTrip), en ms de época. */
   phaseStartedAt: number | null;
   phaseDurationMs: number | null;
-  /** Viajes terminados en esta sesión (más reciente primero). Bloque 4 los muestra junto a los mocks. */
+  /** Viajes terminados en esta sesión (más reciente primero). Mis viajes los muestra antes que los de ejemplo. */
   history: TripHistoryItem[];
+  /** La central confirmó el pedido (`ride:ack`) y en qué modo trabaja. null = sin confirmación. */
+  centralMode: 'auto' | 'manual' | null;
 
   /* UI efímera (no se persiste) */
   /** Destino: elegir moviendo el mapa en vez de la lista. */
@@ -170,6 +172,10 @@ export interface RideActions {
   cancel(by?: 'passenger' | 'central', reason?: string): boolean;
   openHistory(): boolean;
   closeHistory(): boolean;
+  /** "Repetir viaje": precarga el destino (y el servicio) de un viaje pasado y va a elegir servicio. */
+  repeatTrip(item: TripHistoryItem): boolean;
+  /** La central confirmó el pedido en curso. */
+  setCentralAck(rideId: string, mode: 'auto' | 'manual'): boolean;
   setChatOpen(open: boolean): void;
   /** Vuelve todo al estado inicial (conserva el historial y la recogida). */
   reset(): void;
@@ -198,6 +204,7 @@ const initialState: RideState = {
   phaseStartedAt: null,
   phaseDurationMs: null,
   history: [],
+  centralMode: null,
   mapPick: false,
   chatOpen: false,
 };
@@ -223,8 +230,8 @@ export function rideCode(id: string): string {
   return id.replace(/^ride-/, '').slice(0, 6).toUpperCase();
 }
 
-/** Simplifica una polilínea a ≤ max puntos (para el historial y su mini mapa). */
-function thin(path: LatLng[], max = 60): LatLng[] {
+/** Simplifica una polilínea a ≤ max puntos (historial, mini mapas, mensajes a la central). */
+export function thin(path: LatLng[], max = 60): LatLng[] {
   if (path.length <= max) return path;
   const step = (path.length - 1) / (max - 1);
   return Array.from({ length: max }, (_, i) => path[Math.round(i * step)]);
@@ -401,6 +408,7 @@ export const useRide = create<RideStore>()(
             unit: null,
             approach: null,
             assignedBy: null,
+            centralMode: null,
             phaseStartedAt: now,
             phaseDurationMs: null,
           });
@@ -524,6 +532,33 @@ export const useRide = create<RideStore>()(
           return get().step === 'history' && go('home');
         },
 
+        repeatTrip(item) {
+          const s = get();
+          if (s.step !== 'history') return false;
+          const pickup: Spot = s.pickup ?? { lat: item.pickup_lat, lng: item.pickup_lng, label: item.pickup_label };
+          const destination: Spot = { lat: item.dropoff_lat, lng: item.dropoff_lng, label: item.dropoff_label };
+          const sameRoute = routeKey(pickup, destination) === routeKey(s.pickup, s.destination);
+          const ok = go('service', {
+            pickup,
+            destination,
+            route: sameRoute ? s.route : null,
+            serviceId: item.service_id,
+            hours: HOURS_MIN,
+            options: initialOptions,
+            serviceFrom: 'home',
+            mapPick: false,
+          });
+          if (ok) rideEvents.emit({ type: 'destination_selected', spot: { ...destination, place_id: 'repeat' } });
+          return ok;
+        },
+
+        setCentralAck(rideId, mode) {
+          const s = get();
+          if (s.step !== 'searching' || s.ride?.id !== rideId) return false;
+          if (s.centralMode !== mode) set({ centralMode: mode });
+          return true;
+        },
+
         setChatOpen(open) {
           const st = get().step;
           set({ chatOpen: open && (st === 'assigned' || st === 'inTrip') });
@@ -572,6 +607,7 @@ function clearedRide(): Partial<RideState> {
     ride: null,
     unit: null,
     assignedBy: null,
+    centralMode: null,
     approach: null,
     phaseStartedAt: null,
     phaseDurationMs: null,

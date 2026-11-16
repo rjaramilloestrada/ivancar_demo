@@ -4,7 +4,7 @@ import { Logo } from '@/components/brand/Logo';
 import PassengerApp from '@/features/passenger/PassengerApp';
 
 // Vistas secundarias en chunks aparte: el pasajero (móvil) carga solo lo suyo.
-const CentralPlaceholder = lazy(() => import('@/features/central/CentralPlaceholder'));
+const DispatchPanel = lazy(() => import('@/features/central/DispatchPanel'));
 const SplitDemo = lazy(() => import('@/features/demo/SplitDemo'));
 const UiKit = lazy(() => import('@/features/ui-kit/UiKit'));
 const MapLab = lazy(() => import('@/features/map-lab/MapLab'));
@@ -23,7 +23,7 @@ export default function App() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/" element={<PassengerApp />} />
-          <Route path="/central" element={<CentralPlaceholder />} />
+          <Route path="/central" element={<DispatchPanel />} />
           <Route path="/demo" element={<SplitDemo />} />
           <Route path="/ui" element={<UiKit />} />
           <Route path="/map-lab" element={<MapLab />} />

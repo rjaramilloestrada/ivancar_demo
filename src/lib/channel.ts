@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { FleetUnit, IsoDateTime, Ride, RideStatus } from '@/types';
+import type { FleetUnit, IsoDateTime, LatLng, Ride, RideStatus } from '@/types';
 
 /**
  * Canal pasajero ↔ central sobre BroadcastChannel (PLAN_EJECUCION.md, ajuste 2).
@@ -26,8 +26,29 @@ export type ChannelMessage =
   | { type: 'ride:created'; ride: Ride }
   /** Central → pasajero: unidad asignada. `by: 'auto'` = autoasignación sin central. */
   | { type: 'ride:assigned'; ride_id: string; unit: FleetUnit; eta_s: number; by: 'central' | 'auto'; at: IsoDateTime }
-  /** Cambio de estado del viaje. */
-  | { type: 'ride:status'; ride_id: string; status: RideProgressStatus; eta_s?: number; at: IsoDateTime }
+  /**
+   * Cambio de estado del viaje (lo manda el pasajero, que lleva el reloj).
+   * En `en_route` e `in_trip` viajan, opcionales, la unidad, el reloj de la fase y la ruta
+   * que dibuja el pasajero: la central mueve la unidad por la misma línea y al mismo ritmo.
+   */
+  | {
+      type: 'ride:status';
+      ride_id: string;
+      status: RideProgressStatus;
+      eta_s?: number;
+      at: IsoDateTime;
+      driver_id?: string;
+      /** Inicio de la fase (ms de época) y su duración en el demo (ms). */
+      phase_started_at?: number;
+      phase_ms?: number;
+      /** Ruta de la fase (simplificada). */
+      path?: LatLng[];
+    }
+  /**
+   * Central → pasajero: "recibí tu pedido". En modo manual el pasajero espera al operador
+   * más tiempo (`searchManualTimeoutMs`) antes de autoasignarse.
+   */
+  | { type: 'ride:ack'; ride_id: string; mode: 'auto' | 'manual'; at: IsoDateTime }
   /** Cancelación por cualquiera de las partes. */
   | { type: 'ride:cancelled'; ride_id: string; by: ChannelRole; reason?: string; at: IsoDateTime }
   /** Central → pasajero: cambio de unidad. */

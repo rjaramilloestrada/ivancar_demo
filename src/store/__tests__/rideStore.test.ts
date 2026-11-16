@@ -256,3 +256,36 @@ describe('reasignación', () => {
     expect(S().reassignUnit(fleet[2], approach)).toBe(false); // ya llegó
   });
 });
+
+describe('Bloque 4: repetir viaje y confirmación de la central', () => {
+  it('"Repetir viaje" desde Mis viajes precarga destino y servicio y va a elegir servicio', async () => {
+    const { tripHistory } = await import('@/mocks/history');
+    const trip = tripHistory[0];
+    S().setPickup(pickup);
+    expect(S().openHistory()).toBe(true);
+    expect(S().repeatTrip(trip)).toBe(true);
+    expect(S().step).toBe('service');
+    expect(S().destination).toMatchObject({ label: trip.dropoff_label, lat: trip.dropoff_lat, lng: trip.dropoff_lng });
+    expect(S().serviceId).toBe(trip.service_id);
+    expect(S().pickup).toEqual(pickup); // la recogida actual se conserva
+    expect(S().route).toBeNull(); // la ruta se recalcula
+    expect(events.some((e) => e.type === 'destination_selected')).toBe(true);
+  });
+
+  it('solo se repite desde Mis viajes', async () => {
+    const { tripHistory } = await import('@/mocks/history');
+    expect(S().repeatTrip(tripHistory[0])).toBe(false);
+  });
+
+  it('ride:ack de la central se guarda solo para el pedido en búsqueda', () => {
+    toService();
+    S().requestRide();
+    const id = S().ride!.id;
+    expect(S().centralMode).toBeNull();
+    expect(S().setCentralAck('ride-otro', 'manual')).toBe(false);
+    expect(S().setCentralAck(id, 'manual')).toBe(true);
+    expect(S().centralMode).toBe('manual');
+    S().cancel();
+    expect(S().centralMode).toBeNull();
+  });
+});

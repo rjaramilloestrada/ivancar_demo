@@ -5,7 +5,7 @@ import { postMessage, useChannel } from '@/lib/channel';
 import { buildApproach, pickUnit } from '@/lib/dispatch';
 import { simTimings } from '@/lib/simConfig';
 import { fleet } from '@/mocks/drivers';
-import { rideEvents, useRide, type AssignedBy } from '@/store/rideStore';
+import { rideEvents, thin, useRide, type AssignedBy } from '@/store/rideStore';
 import type { FleetUnit, LatLng } from '@/types';
 
 /** Pedidos ya anunciados a la central en esta carga de página (evita duplicados). */
@@ -13,6 +13,17 @@ const announced = new Set<string>();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
 const nowIso = () => new Date().toISOString();
+
+/** Reloj y ruta de la fase actual, para que la central mueva la unidad igual que el pasajero. */
+function phaseInfo(path: LatLng[] | undefined) {
+  const s = useRide.getState();
+  return {
+    driver_id: s.unit?.id,
+    phase_started_at: s.phaseStartedAt ?? undefined,
+    phase_ms: s.phaseDurationMs ?? undefined,
+    path: path ? thin(path, 120) : undefined,
+  };
+}
 
 /**
  * Efectos del pedido: canal con la central, búsqueda con autoasignación, llegada de la
@@ -29,6 +40,7 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
   const rideId = useRide((s) => s.ride?.id ?? null);
   const phaseStartedAt = useRide((s) => s.phaseStartedAt);
   const phaseDurationMs = useRide((s) => s.phaseDurationMs);
+  const centralMode = useRide((s) => s.centralMode);
   const assigning = useRef<string | null>(null);
 
   /* -------------------------------------------------- Canal y analítica */
@@ -58,18 +70,42 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
                 at: nowIso(),
               });
             }
-            postMessage('passenger', { type: 'ride:status', ride_id: e.ride.id, status: 'en_route', eta_s: e.approach.duration_s, at: nowIso() });
+            postMessage('passenger', {
+              type: 'ride:status',
+              ride_id: e.ride.id,
+              status: 'en_route',
+              eta_s: e.approach.duration_s,
+              at: nowIso(),
+              ...phaseInfo(e.approach.path),
+            });
             track('ride_assigned', { by: e.by, service: e.ride.service_id });
             break;
-          case 'reassigned':
+          case 'reassigned': {
+            // La central cambió la unidad: le confirmamos el nuevo reloj y la nueva ruta de llegada.
+            const approach = useRide.getState().approach;
+            postMessage('passenger', {
+              type: 'ride:status',
+              ride_id: e.ride.id,
+              status: 'en_route',
+              eta_s: approach?.duration_s,
+              at: nowIso(),
+              ...phaseInfo(approach?.path),
+            });
             track('ride_reassigned', { service: e.ride.service_id });
             break;
+          }
           case 'arrived':
             postMessage('passenger', { type: 'ride:status', ride_id: e.ride.id, status: 'arrived', at: nowIso() });
             track('driver_arrived');
             break;
           case 'trip_started':
-            postMessage('passenger', { type: 'ride:status', ride_id: e.ride.id, status: 'in_trip', at: nowIso() });
+            postMessage('passenger', {
+              type: 'ride:status',
+              ride_id: e.ride.id,
+              status: 'in_trip',
+              at: nowIso(),
+              ...phaseInfo(useRide.getState().route?.path),
+            });
             track('trip_started');
             break;
           case 'completed':
@@ -118,10 +154,12 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
     const T = simTimings();
     const candidate = pickUnit(s.serviceId, pickup) ?? fleet[0];
     void buildApproach(candidate, pickup, T.approachRouteTimeoutMs); // queda en caché de rutas
-    const deadline = (s.phaseStartedAt ?? Date.now()) + (centralOnline ? T.searchCentralTimeoutMs : T.searchAutoMs);
+    // Central en modo manual: el operador tiene más tiempo antes de la autoasignación.
+    const wait = centralMode === 'manual' ? T.searchManualTimeoutMs : centralOnline || centralMode ? T.searchCentralTimeoutMs : T.searchAutoMs;
+    const deadline = (s.phaseStartedAt ?? Date.now()) + wait;
     const t = setTimeout(() => void assign(candidate, 'auto'), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(t);
-  }, [step, rideId, centralOnline, assign]);
+  }, [step, rideId, centralOnline, centralMode, assign]);
 
   // Respuestas de la central.
   useChannel(
@@ -129,7 +167,9 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
       const m = env.msg;
       const s = useRide.getState();
       if (!s.ride || !('ride_id' in m) || m.ride_id !== s.ride.id) return;
-      if (m.type === 'ride:assigned' && m.by === 'central' && s.step === 'searching') {
+      if (m.type === 'ride:ack' && s.step === 'searching') {
+        s.setCentralAck(m.ride_id, m.mode);
+      } else if (m.type === 'ride:assigned' && m.by === 'central' && s.step === 'searching') {
         void assign(m.unit, 'central');
       } else if (m.type === 'ride:reassigned' && s.step === 'assigned' && s.pickup) {
         const unit = m.unit;

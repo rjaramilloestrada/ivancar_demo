@@ -45,8 +45,14 @@ export function Dialog({ open, onClose, title, description, icon, children, acti
       e.preventDefault();
       onCloseRef.current();
     };
+    // Chrome puede cerrar con Escape sin emitir 'cancel' (sin activación reciente): se avisa igual.
+    const onNativeClose = () => onCloseRef.current();
     d.addEventListener('cancel', onCancel);
-    return () => d.removeEventListener('cancel', onCancel);
+    d.addEventListener('close', onNativeClose);
+    return () => {
+      d.removeEventListener('cancel', onCancel);
+      d.removeEventListener('close', onNativeClose);
+    };
   }, []);
 
   return (

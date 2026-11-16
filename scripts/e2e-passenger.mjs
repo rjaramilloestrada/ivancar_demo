@@ -213,8 +213,8 @@ const SCENARIOS = {
     );
     await page.locator('[data-testid=chat-driver]').click();
     await sleep(400);
-    check(`[${tag}] Chat abre el punto de enganche`, await page.locator('dialog[open]').isVisible());
-    await shot(page, `${tag}-p6-chat-provisional`);
+    check(`[${tag}] Chat abre el chat con el conductor`, await page.locator('dialog[open][data-testid=chat]').isVisible());
+    await shot(page, `${tag}-p6-chat`);
     await page.keyboard.press('Escape');
     await sleep(2500);
     const eta2 = await page.textContent('[data-testid=eta]').catch(() => null);
@@ -258,7 +258,7 @@ const SCENARIOS = {
     await sleep(500);
     const first = await page.locator('[data-testid=history-list] li').first().textContent();
     check(`[${tag}] viaje terminado en el historial`, !!dest && first?.includes(dest) && first.includes(plate), first?.slice(0, 80));
-    await shot(page, `${tag}-p9-mis-viajes-provisional`);
+    await shot(page, `${tag}-p9-mis-viajes`);
 
     const events = await page.evaluate(() => (window.__ivancarEvents ?? []).map((e) => e.event));
     check(
@@ -516,6 +516,104 @@ const SCENARIOS = {
     await orderFast(page);
     await stepIs(page, 'assigned', 6000);
     check(`[${tag}] se autoasigna`, (await page.getByText('Unidad asignada').count()) > 0);
+    done();
+    await ctx.close();
+  },
+
+  /** P9 · Mis viajes: estado vacío, ejemplos con mini mapa, detalle con recibo y "Repetir viaje". */
+  async history(browser) {
+    const tag = 'mis-viajes';
+    const { ctx, page } = await newPage(browser);
+    const done = watch(page, tag);
+    await page.goto(BASE + '#/?sim=4');
+    await waitHome(page);
+    await page.locator('[data-testid=open-history]').click();
+    await stepIs(page, 'history');
+    await sleep(600);
+    check(`[${tag}] estado vacío diseñado sin viajes de la sesión`, await page.locator('[data-testid=history-empty]').isVisible());
+    const n = await page.locator('[data-testid=history-examples] li').count();
+    const maps = await page.locator('[data-testid=history-examples] svg[data-testid=mini-map] path').count();
+    check(`[${tag}] viajes de ejemplo con mini mapa SVG (sin Leaflet)`, n >= 6 && maps >= n * 2 && (await page.locator('[data-testid=history-examples] .leaflet-container').count()) === 0, `${n} viajes`);
+    const first = await page.locator('[data-testid=history-examples] li').first().textContent();
+    check(`[${tag}] tarjeta con fecha relativa, total, tarifa referencial, conductor y placa`, /(Hoy|Ayer|Hace[^·]*|\d+ \w+) ·/.test(first ?? '') && /\$\d/.test(first ?? '') && /Tarifa referencial de demo/.test(first ?? '') && /GS[A-Z]-\d{4}/.test(first ?? ''), first?.slice(0, 90));
+    await shot(page, `${tag}-p9-lista-vacia`);
+    const dest = await page.locator('[data-testid=history-examples] li').nth(1).locator('[data-testid=trip-dropoff]').textContent();
+    await page.locator('[data-testid=history-examples] li').nth(1).locator('button').click();
+    await page.waitForSelector('[data-testid=trip-detail]');
+    await sleep(500);
+    check(`[${tag}] detalle con recibo simulado`, /Recibo simulado del demo/.test((await page.textContent('[data-testid=history-receipt]')) ?? ''));
+    const focus = await page.evaluate(() => document.activeElement?.tagName);
+    check(`[${tag}] el foco pasa al título del detalle`, focus === 'H2', focus ?? '');
+    await shot(page, `${tag}-p9-detalle`);
+    await page.locator('[data-testid=repeat-trip]').click();
+    await stepIs(page, 'service');
+    await page.waitForSelector('[data-testid=cta-request]:not([aria-busy])', { timeout: 8000 });
+    await sleep(700);
+    const st = await page.evaluate(() => JSON.parse(sessionStorage.getItem('ivancar-ride')).state);
+    check(`[${tag}] "Repetir viaje" precarga el destino y lleva a elegir servicio`, st.destination?.label === dest?.trim() && st.step === 'service', `${dest?.trim()} → ${st.destination?.label}`);
+    await shot(page, `${tag}-p3-repetir`);
+    // Pedir el repetido y comprobar que entra a "Tus viajes".
+    await page.locator('[data-testid=cta-request]').click();
+    await stepIs(page, 'rating', 25_000);
+    await page.locator('[data-testid=finish]').click();
+    await stepIs(page, 'home');
+    await page.locator('[data-testid=open-history]').click();
+    await stepIs(page, 'history');
+    await sleep(500);
+    check(`[${tag}] el viaje nuevo aparece primero en "Tus viajes"`, (await page.locator('[data-testid=history-list] li').first().textContent())?.includes(dest?.trim() ?? '###'));
+    check(`[${tag}] ya no muestra el estado vacío`, (await page.locator('[data-testid=history-empty]').count()) === 0);
+    await shot(page, `${tag}-p9-con-viaje`);
+    done();
+    await ctx.close();
+  },
+
+  /** Chat simulado: saludo, escribiendo, respuestas rápidas, hora, Escape, no leídos y limpieza. */
+  async chat(browser) {
+    const tag = 'chat';
+    const { ctx, page } = await newPage(browser);
+    const done = watch(page, tag);
+    await page.goto(BASE + '#/?sim=1');
+    await waitHome(page);
+    await orderFast(page);
+    await stepIs(page, 'assigned', 10_000);
+    await sleep(600);
+    await page.locator('[data-testid=chat-driver]').click();
+    await page.waitForSelector('dialog[open][data-testid=chat]');
+    await sleep(200);
+    check(`[${tag}] foco en el campo de texto al abrir`, await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'chat-input'));
+    check(`[${tag}] conversación como role=log`, (await page.locator('[role=log][aria-live=polite]').count()) === 1);
+    check(`[${tag}] aviso de chat de demostración`, await page.getByText('Chat de demostración').isVisible());
+    await page.waitForSelector('[data-testid=chat-typing]', { timeout: 3000 }).catch(() => {});
+    check(`[${tag}] indicador "escribiendo"`, (await page.locator('[data-testid=chat-typing]').count()) + (await page.locator('[data-from=driver]').count()) > 0);
+    await page.waitForSelector('[data-from=driver]', { timeout: 5000 });
+    const greet = await page.locator('[data-from=driver]').first().textContent();
+    check(`[${tag}] saludo del conductor con contexto ("ya voy")`, /Ya voy en camino/.test(greet ?? ''), greet ?? '');
+    check(`[${tag}] hora en cada mensaje`, /\d{2}:\d{2}/.test(greet ?? ''));
+    await page.getByRole('button', { name: '¿Cuánto falta?' }).click();
+    await page.waitForFunction(() => document.querySelectorAll('[data-from=driver]').length >= 2, null, { timeout: 5000 });
+    const r1 = await page.locator('[data-from=driver]').nth(1).textContent();
+    check(`[${tag}] "¿Cuánto falta?" responde con el tiempo`, /min|llegar|afuera/.test(r1 ?? ''), r1 ?? '');
+    await page.fill('[data-testid=chat-input]', 'Hola, una pregunta');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => document.querySelectorAll('[data-from=driver]').length >= 3, null, { timeout: 5000 });
+    const r2 = await page.locator('[data-from=driver]').nth(2).textContent();
+    check(`[${tag}] pregunta "dónde estás" con contexto`, /Me esperas en la entrada principal/.test(r2 ?? ''), r2 ?? '');
+    await shot(page, `${tag}-p6-conversacion`);
+    await page.keyboard.press('Escape');
+    await sleep(300);
+    check(`[${tag}] Escape cierra el chat`, (await page.locator('dialog[open][data-testid=chat]').count()) === 0);
+    // Al llegar, "Ya estoy afuera" con el chat cerrado → no leídos.
+    await page.waitForSelector('[data-testid=chat-unread]', { timeout: 20_000 });
+    check(`[${tag}] "estoy afuera" al llegar suma no leídos`, (await page.textContent('[data-testid=chat-unread]')) === '1');
+    await page.locator('[data-testid=chat-driver]').click();
+    await sleep(400);
+    const last = await page.locator('[data-from=driver]').last().textContent();
+    check(`[${tag}] mensaje "Ya estoy afuera" con placa`, /Ya estoy afuera/.test(last ?? '') && /GS[A-Z]-\d{4}/.test(last ?? ''), last ?? '');
+    await shot(page, `${tag}-p6-afuera`);
+    await page.keyboard.press('Escape');
+    await stepIs(page, 'rating', 40_000);
+    const left = await page.evaluate(() => JSON.parse(sessionStorage.getItem('ivancar-chat') ?? '{"state":{"messages":[]}}').state.messages.length);
+    check(`[${tag}] el historial del chat se limpia al terminar el viaje`, left === 0, `${left} mensajes`);
     done();
     await ctx.close();
   },

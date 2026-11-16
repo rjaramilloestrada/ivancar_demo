@@ -8,6 +8,7 @@ import { phaseProgress, rideCode, useRide } from '@/store/rideStore';
 import { useNow } from '../hooks';
 import { DriverCard, SheetTitle } from '../parts';
 import { SheetContent } from '../SheetSlots';
+import { useChat } from '../chat/chatStore';
 import { tripShareText } from '../share';
 
 /** Minutos que faltan de una fase, en texto ("4 min"), o null si ya casi llega. */
@@ -28,6 +29,7 @@ export function AssignedSheet() {
   const phaseDurationMs = useRide((s) => s.phaseDurationMs);
   const cancel = useRide((s) => s.cancel);
   const openChat = useRide((s) => s.setChatOpen);
+  const unread = useChat((s) => (s.rideId === ride.id ? s.unread : 0));
   const [confirm, setConfirm] = useState(false);
   const now = useNow(500);
 
@@ -92,7 +94,7 @@ export function AssignedSheet() {
 
         <div className="mt-3 grid grid-cols-3 gap-2">
           <ActionLink href={telHref} icon={<IconPhone size={20} />} label="Llamar" onClick={() => track('call_click', { from: 'assigned' })} testId="call-driver" />
-          <ActionButton icon={<IconChat size={20} />} label="Chat" onClick={() => openChat(true)} testId="chat-driver" />
+          <ActionButton icon={<IconChat size={20} />} label="Chat" badge={unread} onClick={() => openChat(true)} testId="chat-driver" />
           <ActionButton icon={<IconClose size={20} />} label="Cancelar" tone="danger" onClick={() => setConfirm(true)} testId="cancel-ride" />
         </div>
         <p className="mt-3 text-center text-[12px] text-fg-55">Conductor y unidad de demostración.</p>
@@ -132,11 +134,37 @@ export function AssignedSheet() {
 const actionClass =
   'flex min-h-[64px] flex-col items-center justify-center gap-1 rounded-2xl border border-line-strong text-[13px] font-semibold transition-colors hover:border-fg-55';
 
-function ActionButton({ icon, label, onClick, tone, testId }: { icon: ReactNode; label: string; onClick: () => void; tone?: 'danger'; testId?: string }) {
+function ActionButton({
+  icon,
+  label,
+  onClick,
+  tone,
+  testId,
+  badge = 0,
+}: {
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  tone?: 'danger';
+  testId?: string;
+  /** Mensajes sin leer (chat). */
+  badge?: number;
+}) {
   return (
-    <button type="button" onClick={onClick} className={cn(actionClass, tone === 'danger' && 'text-danger')} data-testid={testId}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={badge ? `${label}, ${badge} ${badge === 1 ? 'mensaje nuevo' : 'mensajes nuevos'}` : undefined}
+      className={cn(actionClass, 'relative', tone === 'danger' && 'text-danger')}
+      data-testid={testId}
+    >
       {icon}
       {label}
+      {badge > 0 && (
+        <span aria-hidden className="absolute right-3 top-2 grid min-w-5 place-items-center rounded-full bg-ivancar-yellow px-1 text-[11px] font-black leading-5 text-on-yellow" data-testid="chat-unread">
+          {badge}
+        </span>
+      )}
     </button>
   );
 }

@@ -23,6 +23,18 @@ export const SIM_TIMINGS = {
   arrivedPauseMs: 2_600,
   /** Recorrido de la recogida al destino. */
   tripMs: 16_000,
+
+  /* ------------------------------------------------ Central (Bloque 4) */
+  /** Con la central en modo manual: el pasajero espera al operador hasta X ms y luego se autoasigna. */
+  searchManualTimeoutMs: 40_000,
+  /** Pausa visible antes de que la central asigne sola ("el sistema decide"). */
+  centralAutoAssignMs: 2_400,
+  /** Alerta: pedido sin asignar durante más de X ms. */
+  alertUnassignedMs: 15_000,
+  /** Alerta: unidad en camino que no avanza (o pasada de su hora de llegada) durante más de X ms. */
+  alertStalledMs: 12_000,
+  /** Actividad sembrada: un pedido simulado nuevo cada X ms. */
+  seedEveryMs: 28_000,
 } as const;
 
 export type SimTimings = { -readonly [K in keyof typeof SIM_TIMINGS]: number };

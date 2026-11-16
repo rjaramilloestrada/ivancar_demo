@@ -28,3 +28,6 @@ test-results/
 
 # capturas del recorrido E2E (scripts/e2e-passenger.mjs)
 e2e-shots/
+
+# worktrees locales de agentes
+.claude/worktrees/

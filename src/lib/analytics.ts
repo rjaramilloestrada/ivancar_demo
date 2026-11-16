@@ -25,7 +25,11 @@ export type AnalyticsEvent =
   | 'call_click'
   | 'whatsapp_fallback_click'
   | 'emergency_open'
-  | 'history_open';
+  | 'history_open'
+  | 'history_trip_open'
+  | 'history_repeat'
+  | 'chat_open'
+  | 'chat_message';
 
 export type AnalyticsData = Record<string, string | number | boolean | null | undefined>;
 

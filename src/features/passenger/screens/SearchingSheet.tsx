@@ -19,10 +19,12 @@ export function SearchingSheet({ centralOnline }: { centralOnline: boolean }) {
   const ride = useRide((s) => s.ride)!;
   const startedAt = useRide((s) => s.phaseStartedAt) ?? Date.now();
   const cancel = useRide((s) => s.cancel);
+  const centralMode = useRide((s) => s.centralMode);
   const now = useNow(250);
 
   const T = simTimings();
-  const expected = centralOnline ? T.searchCentralTimeoutMs : T.searchAutoMs;
+  const manual = centralMode === 'manual';
+  const expected = manual ? T.searchManualTimeoutMs : centralOnline ? T.searchCentralTimeoutMs : T.searchAutoMs;
   const progress = Math.min(0.95, (now - startedAt) / (expected + 600));
 
   // Unidades disponibles a menos de 6 km (contador; el Bloque 5 lo anima con el radar).
@@ -97,7 +99,11 @@ export function SearchingSheet({ centralOnline }: { centralOnline: boolean }) {
           </p>
         )}
         <div className="mt-3 flex justify-center">
-          {centralOnline ? (
+          {manual ? (
+            <Eyebrow live tone="neutral" className="text-[10px]">
+              Un operador de la central está asignando tu unidad
+            </Eyebrow>
+          ) : centralOnline || centralMode ? (
             <Eyebrow live tone="neutral" className="text-[10px]">
               Central IVANCAR conectada
             </Eyebrow>

@@ -4,8 +4,9 @@ import { cn } from '@/lib/cn';
 import { formatDistance, formatDuration } from '@/lib/geo';
 import { DEMO_FARE_NOTICE, formatUSD } from '@/lib/pricing';
 import { getService } from '@/mocks/services';
-import { rideCode, useRide } from '@/store/rideStore';
+import { useRide } from '@/store/rideStore';
 import { PAYMENT_LABEL, SheetTitle } from '../parts';
+import { Receipt } from '../Receipt';
 import { SheetContent } from '../SheetSlots';
 
 const TIPS = [0, 0.5, 1, 2];
@@ -24,8 +25,6 @@ export function RatingSheet() {
   const ids = { stars: useId(), tip: useId(), comment: useId(), receipt: useId() };
 
   const fare = ride.fare_final_usd ?? ride.fare_estimate_usd;
-  const total = fare + tip;
-  const when = new Date(ride.completed_at ?? Date.now());
 
   return (
     <SheetContent
@@ -131,24 +130,14 @@ export function RatingSheet() {
             {receipt ? 'Ocultar recibo' : 'Ver recibo'}
           </button>
           {receipt && (
-            <div id={ids.receipt} className="mt-2 rounded-[20px] border border-dashed border-line-strong p-4 text-[14px]" data-testid="receipt">
-              <div className="flex items-baseline justify-between">
-                <p className="font-black uppercase tracking-wide">IVANCAR</p>
-                <p className="text-[12px] text-fg-55">Pedido #{rideCode(ride.id)}</p>
-              </div>
-              <p className="text-[12px] text-fg-55">
-                {when.toLocaleDateString('es-EC', { day: 'numeric', month: 'long', year: 'numeric' })} ·{' '}
-                {when.toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', hour12: false })}
-              </p>
-              <dl className="mt-3 flex flex-col gap-1.5">
-                <Line label={`${getService(ride.service_id).name} · ${formatDistance(ride.distance_m)}`} value={formatUSD(fare)} />
-                <Line label="Propina" value={formatUSD(tip)} />
-                <Line label="Total" value={formatUSD(total)} strong />
-                <Line label="Forma de pago" value={PAYMENT_LABEL[ride.payment_method]} />
-                {unit && <Line label="Unidad" value={`${unit.vehicle.plate} · ${unit.display_name}`} />}
-              </dl>
-              <p className="mt-3 border-t border-line pt-2 text-[12px] text-fg-55">Recibo simulado del demo · sin validez tributaria · {DEMO_FARE_NOTICE.toLowerCase()}.</p>
-            </div>
+            <Receipt
+              id={ids.receipt}
+              className="mt-2"
+              ride={ride}
+              tip={tip}
+              unitLabel={unit ? `${unit.vehicle.plate} · ${unit.display_name}` : undefined}
+              data-testid="receipt"
+            />
           )}
         </div>
       </div>
@@ -162,15 +151,6 @@ function Stat({ label, value, note, highlight }: { label: string; value: string;
       <dt className="text-[12px] font-semibold uppercase tracking-[0.1em] text-fg-55">{label}</dt>
       <dd className={cn('mt-0.5 text-[20px] font-black tabular-nums', highlight && 'text-ivancar-yellow')}>{value}</dd>
       {note && <dd className="text-[11px] leading-tight text-fg-55">{note}</dd>}
-    </div>
-  );
-}
-
-function Line({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className={cn('flex items-baseline justify-between gap-3', strong && 'border-t border-line pt-1.5 font-bold')}>
-      <dt className={strong ? '' : 'text-fg-65'}>{label}</dt>
-      <dd className="tabular-nums">{value}</dd>
     </div>
   );
 }
