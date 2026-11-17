@@ -61,6 +61,7 @@ export function RouteLine({
   onDrawnRef.current = onDrawn;
   const stopDraw = useRef<(() => void) | null>(null);
 
+  const zooming = useRef(false);
   const render = () => {
     const l = lines.current;
     if (!l) return;
@@ -72,7 +73,22 @@ export function RouteLine({
     l.todo.setLatLngs(todo);
     l.glow?.setLatLngs(todo);
     l.done.setLatLngs(done);
+    // A mitad de un vuelo de cámara (flyTo), Leaflet proyecta la geometría nueva al zoom
+    // actual pero el lienzo SVG sigue escalado desde el zoom anterior: la línea se dibuja
+    // corrida respecto del auto. Reiniciar el renderizador alinea ambos.
+    if (zooming.current) (l.todo as unknown as { _renderer?: { _reset?: () => void } })._renderer?._reset?.();
   };
+
+  useEffect(() => {
+    const on = () => (zooming.current = true);
+    const off = () => (zooming.current = false);
+    map.on('zoomstart', on);
+    map.on('zoomend', off);
+    return () => {
+      map.off('zoomstart', on);
+      map.off('zoomend', off);
+    };
+  }, [map]);
 
   const startDraw = () => {
     stopDraw.current?.();
