@@ -26,54 +26,30 @@ export const springs = {
 } as const;
 
 /**
- * Proveedores de tiles raster sin API key.
+ * Mapa base: tiles vectoriales de OpenFreeMap (esquema OpenMapTiles, datos de OpenStreetMap),
+ * sin API key, dibujados con MapLibre GL dentro de Leaflet y con estilo propio
+ * (`components/map/basemapStyle.ts`). Nítido en retina a cualquier zoom y con nombres de
+ * calles y barrios en español.
  *
- * CARTO Dark Matter era la opción del plan, pero en nov-2026 sus tiles devuelven una
- * marca de agua "API KEY REQUIRED" (comprobado: misma respuesta con o sin Referer).
- * Se usa Esri World Dark Gray Canvas (base + etiquetas), sin clave para visualización
- * con atribución. Si se consigue una clave de CARTO, basta con cambiar `map.tiles`.
+ * Historial: CARTO Dark Matter pide clave desde 2026 y la capa de etiquetas de Esri llega
+ * vacía en Guayaquil; ambos se retiraron.
  */
-export interface TileProvider {
-  /** Capa base. */
-  url: string;
-  /** Capa opcional de etiquetas encima de la base (PNG transparente). */
-  labelsUrl?: string;
-  attribution: string;
-  subdomains?: string;
-  /** Zoom máximo con tiles reales (más allá se escala). */
-  maxNativeZoom: number;
-  /** true si la URL ya pide @2x en retina (placeholder {r}). */
-  retinaPlaceholder: boolean;
-}
-
-export const tileProviders = {
-  esriDarkGray: {
-    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-    labelsUrl:
-      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
-    attribution:
-      'Powered by <a href="https://www.esri.com">Esri</a> &middot; Esri, HERE, Garmin, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    maxNativeZoom: 16,
-    retinaPlaceholder: false,
-  },
-  /** Requiere clave desde 2026: añadir `?api_key=...` según carto.com/basemaps/apikey. */
-  cartoDarkMatter: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution:
-      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxNativeZoom: 20,
-    retinaPlaceholder: true,
-  },
-} satisfies Record<string, TileProvider>;
+export const basemap = {
+  /** TileJSON: apunta a la versión vigente del planeta (las URLs de tiles cambian por versión). */
+  tileJson: 'https://tiles.openfreemap.org/planet',
+  glyphs: 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',
+  origin: 'https://tiles.openfreemap.org',
+  attribution:
+    '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> &copy; <a href="https://www.openmaptiles.org/" target="_blank" rel="noopener">OpenMapTiles</a> &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>',
+  /** Zoom máximo de Leaflet: los vectores se redibujan nítidos, no se estiran. */
+  maxZoom: 18,
+} as const;
 
 /** Mapa (bloque 2). */
 export const map = {
-  tiles: tileProviders.esriDarkGray as TileProvider,
   /** Default si no hay geolocalización: Samborondón, La Puntilla (Parque Histórico). */
   defaultCenter: [-2.1449, -79.8676] as [number, number],
   defaultZoom: 15,
-  /** Vista general de Guayaquil para la entrada animada. */
-  cityCenter: [-2.17, -79.9224] as [number, number],
-  cityZoom: 11,
+  /** Entrada: se abre un poco más lejos que la ubicación y se acerca (vuelo corto). */
+  introZoom: 13.4,
 } as const;

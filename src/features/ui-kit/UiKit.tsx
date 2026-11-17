@@ -2,7 +2,7 @@ import '@fontsource-variable/inter/wght-italic.css';
 import { useState, type ReactNode } from 'react';
 import { AppHeader } from '@/components/brand/AppHeader';
 import { DemoBanner } from '@/components/brand/DemoBanner';
-import { MapBackdrop } from '@/components/map/MapBackdrop';
+import { MapSkeleton } from '@/components/map/MapSkeleton';
 import { BottomSheet, type SheetSnap } from '@/components/sheet/BottomSheet';
 import {
   Button,
@@ -297,7 +297,7 @@ function Sheet() {
         data-testid="sheet-frame"
         className="relative mx-auto h-[640px] w-full max-w-[390px] overflow-hidden rounded-[40px] border border-line-strong"
       >
-        <MapBackdrop />
+        <MapSkeleton />
         <BottomSheet
           aria-label="Ejemplo de bottom sheet"
           snap={snap}

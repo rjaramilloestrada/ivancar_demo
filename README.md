@@ -40,7 +40,7 @@ y salta lo que es solo presentación (splash y vuelo de entrada del mapa).
 
 | Real | Simulado |
 |---|---|
-| Mapa y calles (tiles de Esri, datos OSM) | Conductores, placas y vehículos (ficticios) |
+| Mapa y calles (OpenFreeMap, datos OSM) | Conductores, placas y vehículos (ficticios) |
 | Geolocalización, si el usuario da permiso (si no, Samborondón) | Movimiento de las unidades y de la flota |
 | Ruta por calles con OSRM público (si no responde, ruta estimada) | Asignación, llegada y viaje (tiempos comprimidos: P1 → P8 en unos 40 s) |
 | Dirección del pin con Nominatim (si no responde, el lugar conocido más cercano) | Tarifas: fórmula de ejemplo, siempre marcada "Tarifa referencial de demo" |
@@ -88,9 +88,12 @@ Pages solo está disponible en repositorios públicos o con un plan de pago de G
 - **La central solo se conecta dentro del mismo navegador.** El pedido viaja por BroadcastChannel:
   conecta pestañas, ventanas e iframes del mismo origen en el mismo navegador, no un teléfono con un
   laptop. Por eso existe `#/demo`. El cruce real entre dispositivos queda para la Fase 1 (backend en tiempo real).
-- **Tiles de Esri** (World Dark Gray Canvas, sin clave, con atribución). Son de 256 px sin versión @2x
-  (Lighthouse lo marca en pantallas de alta densidad) y su velocidad depende de un servidor externo.
-  El proveedor se cambia en `src/theme/tokens.ts`. Los tiles vistos quedan en caché 14 días.
+- **Mapa base de OpenFreeMap** (tiles vectoriales OpenMapTiles con datos OSM, sin clave, con
+  atribución), dibujado con MapLibre GL dentro de Leaflet y con estilo oscuro propio
+  (`src/components/map/basemapStyle.ts`). Necesita WebGL; sin WebGL o sin red el mapa muestra un
+  aviso con "Reintentar" y el pedido sigue funcionando. Su velocidad depende de un servidor externo
+  gratuito y sin SLA. MapLibre pesa ~290 kB gzip (más ~150 kB del worker), en un chunk diferido.
+  Las teselas vistas quedan en caché 14 días.
 - **OSRM y Nominatim** son servicios públicos de demostración, sin garantía de disponibilidad ni de
   uso intensivo. Si fallan, la app usa ruta estimada y el lugar conocido más cercano, sin bloquear el pedido.
 - Sin red, el shell abre y el pedido se simula igual, pero el mapa solo muestra lo que ya estaba en caché.

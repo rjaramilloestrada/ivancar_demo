@@ -3,10 +3,11 @@ import { ArrivalBanner } from '@/components/fx/ArrivalBanner';
 import { Confetti, type ConfettiHandle } from '@/components/fx/Confetti';
 import { InstallPrompt } from '@/components/fx/InstallPrompt';
 import { Splash, useSplashOnce } from '@/components/fx/Splash';
+import type L from 'leaflet';
 import type { MapViewHandle } from '@/components/map/MapView';
-import { MapBackdrop } from '@/components/map/MapBackdrop';
+import { MapSkeleton } from '@/components/map/MapSkeleton';
 import { BottomSheet, type SheetSnap } from '@/components/sheet/BottomSheet';
-import { useToast } from '@/components/ui';
+import { IconLocate, useToast } from '@/components/ui';
 import { initAnalytics, track } from '@/lib/analytics';
 import { usePeerOnline } from '@/lib/channel';
 import { useAddress } from '@/lib/geocode';
@@ -28,6 +29,7 @@ import { SearchingSheet } from './screens/SearchingSheet';
 import { ServiceSheet } from './screens/ServiceSheet';
 import { SheetSlotsContext, type SheetSlotElements } from './SheetSlots';
 import { TOP_CHROME, TopBar } from './TopBar';
+import { useMapCamera } from './useMapCamera';
 import { useRideSimulation } from './useRideSimulation';
 
 /** Altura inicial del sheet por paso. */
@@ -37,8 +39,10 @@ const SNAP: Record<Step, SheetSnap> = {
   service: 'half',
   payment: 'full',
   searching: 'half',
-  assigned: 'half',
-  inTrip: 'half',
+  // Con el auto en camino el mapa es protagonista: el sheet abre en su altura corta (ETA,
+  // placa y Llamar / Chat / Cancelar siguen a la vista) y se puede subir para ver más.
+  assigned: 'peek',
+  inTrip: 'peek',
   rating: 'full',
   history: 'full',
 };
@@ -64,7 +68,6 @@ export default function PassengerApp() {
   const pickup = useRide((s) => s.pickup);
   const destination = useRide((s) => s.destination);
   const route = useRide((s) => s.route);
-  const approach = useRide((s) => s.approach);
 
   const centralOnline = usePeerOnline({ intervalMs: 2000, timeoutMs: 5000 });
   useRideSimulation({ centralOnline });
@@ -212,21 +215,8 @@ export default function PassengerApp() {
     }
   }, [step]);
 
-  const sheetBucket = Math.round(sheetH / 24);
-  useEffect(() => {
-    if (step === 'home' || step === 'destination' || step === 'history') return;
-    const t = setTimeout(() => {
-      const s = useRide.getState();
-      const m = mapRef.current;
-      if (!m || !s.pickup) return;
-      const pts: LatLng[] = [];
-      if (step === 'assigned' && s.approach) pts.push(...s.approach.path);
-      else if (s.route) pts.push(...s.route.path);
-      else if (s.destination) pts.push([s.pickup.lat, s.pickup.lng], [s.destination.lat, s.destination.lng]);
-      if (pts.length) m.fitBounds(pts, { padding: 44, maxZoom: 16 });
-    }, 90);
-    return () => clearTimeout(t);
-  }, [step, !!route, approach, sheetBucket]);
+  const [leaflet, setLeaflet] = useState<L.Map | null>(null);
+  const camera = useMapCamera(mapRef, step, leaflet, sheetH, TOP_CHROME);
 
   /* ------------------------------------------------- Render */
   const containerH = mainRef.current?.clientHeight ?? 800;
@@ -238,11 +228,12 @@ export default function PassengerApp() {
       data-central={centralOnline ? 'online' : 'offline'}
       data-testid="passenger-app"
     >
-      <MapBackdrop />
+      <MapSkeleton />
       {sheetH > 0 && (
         <Suspense fallback={null}>
           <PassengerMap
             ref={mapRef}
+            onReady={setLeaflet}
             center={startView.center}
             zoom={startView.zoom}
             intro={intro}
@@ -268,6 +259,20 @@ export default function PassengerApp() {
       )}
 
       <TopBar />
+
+      {camera.paused && (
+        <button
+          type="button"
+          onClick={camera.recenter}
+          aria-label="Recentrar el mapa en tu viaje"
+          title="Recentrar"
+          data-testid="recenter"
+          className="absolute right-4 bottom-0 z-[25] grid size-12 place-items-center rounded-full border border-line-strong bg-surface/95 text-fg shadow-sheet backdrop-blur-md transition-colors hover:border-ivancar-yellow hover:text-ivancar-yellow"
+          style={{ transform: `translateY(${-(sheetH + 40)}px)` }}
+        >
+          <IconLocate size={22} />
+        </button>
+      )}
 
       <SheetSlotsContext value={slots}>
         <BottomSheet

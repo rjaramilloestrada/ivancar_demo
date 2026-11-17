@@ -30,6 +30,7 @@
   /* Superficies */
   --color-surface: #0c0c0c;
   --color-surface-raised: #151515;
+  --color-map: #111214; /* fondo del mapa base (theme/basemapStyle: land) */
   --color-header: rgb(0 0 0 / 0.85);
 
   /* Texto */

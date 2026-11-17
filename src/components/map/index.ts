@@ -8,6 +8,6 @@ export { RouteLine } from './RouteLine';
 export type { RouteLineHandle, RouteLineProps } from './RouteLine';
 export { DestinationMarker, PickupMarker } from './Markers';
 export type { PointMarkerProps } from './Markers';
-export { MapBackdrop } from './MapBackdrop';
+export { MapSkeleton } from './MapSkeleton';
 // FleetLayer no se reexporta aquí: importa los circuitos de patrulla (~17 KB) y conviene
 // cargarlo con import directo desde las vistas que lo usan.

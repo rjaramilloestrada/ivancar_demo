@@ -3,7 +3,6 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
-import { map as mapTokens } from './src/theme/tokens.ts';
 
 // GitHub Pages sirve el sitio en https://<usuario>.github.io/ivancar_demo/
 const BASE = '/ivancar_demo/';
@@ -21,37 +20,18 @@ function preloadInter(): Plugin {
         // Solo en la primera visita: con el service worker activo la fuente sale de la caché
         // al instante y un preload extra queda "sin usar" (aviso en consola).
         const href = `${BASE}${file}`;
-        // Tile central de la vista de entrada (Guayaquil completo): se pide desde el HTML, sin
-        // esperar a Leaflet, cuando la app va a hacer la entrada animada (sin pedido en curso,
-        // sin ?sim= y sin reduced motion; mismas condiciones que PassengerApp).
-        const tiles = introTiles().map((u) => JSON.stringify(u)).join(',');
-        const pre = (attrs: string) => `var l=document.createElement('link');${attrs}document.head.appendChild(l);`;
         return [
           {
             tag: 'script',
             children:
-              `(function(){try{if(!(navigator.serviceWorker&&navigator.serviceWorker.controller)){${pre(`l.rel='preload';l.as='font';l.type='font/woff2';l.crossOrigin='';l.href='${href}';`)}}` +
-              `var h=location.hash||'',st='';try{st=sessionStorage.getItem('ivancar-ride')||''}catch(e){}` +
-              `if((h===''||h==='#/'||h==='#')&&!/[?&]sim=/.test(location.href)&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&!/"pickup":\{/.test(st)){` +
-              `[${tiles}].forEach(function(u){${pre(`l.rel='preload';l.as='image';l.href=u;`)}})}}catch(e){}})()`,
+              `(function(){try{if(!(navigator.serviceWorker&&navigator.serviceWorker.controller)){` +
+              `var l=document.createElement('link');l.rel='preload';l.as='font';l.type='font/woff2';l.crossOrigin='';l.href='${href}';document.head.appendChild(l)}}catch(e){}})()`,
             injectTo: 'head',
           },
         ];
       },
     },
   };
-}
-
-/** URLs (base y etiquetas) del tile que queda en el centro de la vista de entrada. */
-function introTiles(): string[] {
-  const [lat, lng] = mapTokens.cityCenter;
-  const z = mapTokens.cityZoom;
-  const n = 2 ** z;
-  const x = Math.floor(((lng + 180) / 360) * n);
-  const r = (lat * Math.PI) / 180;
-  const y = Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
-  const fill = (u: string) => u.replace('{z}', String(z)).replace('{x}', String(x)).replace('{y}', String(y));
-  return [mapTokens.tiles.url, mapTokens.tiles.labelsUrl].filter((u): u is string => !!u && !u.includes('{s}')).map(fill);
 }
 
 export default defineConfig({
@@ -89,7 +69,8 @@ export default defineConfig({
       },
       workbox: {
         // Shell de la app: JS, CSS, HTML, fuentes, íconos y las imágenes optimizadas.
-        globPatterns: ['**/*.{js,css,html,woff2,svg,png,webp}'],
+        // .mjs: el worker de MapLibre (se publica como archivo aparte).
+        globPatterns: ['**/*.{js,mjs,css,html,woff2,svg,png,webp}'],
         // El logo original (530 KB) no se precachea; la UI usa la versión WebP.
         globIgnores: [
           '**/img/ivancarlogo.png',
@@ -108,13 +89,25 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
-            // Tiles del mapa (bloque 2): Esri Dark Gray Canvas (y CARTO si se configura con clave)
-            urlPattern: /^https:\/\/(server\.arcgisonline\.com\/ArcGIS\/rest\/services\/Canvas\/|[a-d]\.basemaps\.cartocdn\.com\/)/,
+            // TileJSON del mapa base: apunta a la versión vigente de las teselas. Red primero
+            // (las versiones viejas se retiran del servidor) y caché solo como respaldo offline.
+            urlPattern: /^https:\/\/tiles\.openfreemap\.org\/planet$/,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'map-tilejson',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 2, maxAgeSeconds: 60 * 60 * 24 * 7 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // Teselas vectoriales (URL versionada, inmutables) y glifos de OpenFreeMap.
+            urlPattern: /^https:\/\/tiles\.openfreemap\.org\/(planet\/.+\.pbf|fonts\/)/,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'map-tiles',
-              expiration: { maxEntries: 400, maxAgeSeconds: 60 * 60 * 24 * 14 },
-              cacheableResponse: { statuses: [0, 200] },
+              cacheName: 'map-vector',
+              expiration: { maxEntries: 600, maxAgeSeconds: 60 * 60 * 24 * 14 },
+              cacheableResponse: { statuses: [200] },
             },
           },
         ],
@@ -124,14 +117,20 @@ export default defineConfig({
   ],
   build: {
     target: 'es2022',
+    // MapLibre GL es un solo módulo minificado de ~1,2 MB (~330 kB gzip) que no admite más
+    // división; va en un chunk diferido (no bloquea el primer pintado) y precacheado por el
+    // service worker. El resto de chunks sigue por debajo de 500 kB.
+    chunkSizeWarningLimit: 1300,
     rolldownOptions: {
       output: {
-        // Librerías en chunks propios: cachean aparte del código de la app y ningún
-        // chunk pasa de 500 kB. Todas se cargan en la home, en paralelo.
+        // Librerías en chunks propios: cachean aparte del código de la app. React y Motion van
+        // en la ruta inicial; Leaflet y MapLibre llegan con el chunk diferido del mapa.
         codeSplitting: {
           groups: [
-            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 3 },
-            { name: 'leaflet', test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/, priority: 2 },
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 4 },
+            // MapLibre solo lo alcanzan los chunks diferidos del mapa: nunca entra en la ruta inicial.
+            { name: 'maplibre', test: /node_modules[\\/](maplibre-gl|@maplibre)[\\/]/, priority: 2 },
+            { name: 'leaflet', test: /node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/, priority: 3 },
             { name: 'motion', test: /node_modules[\\/](motion|motion-dom|motion-utils|framer-motion)[\\/]/, priority: 1 },
           ],
         },

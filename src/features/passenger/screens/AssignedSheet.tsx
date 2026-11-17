@@ -50,38 +50,58 @@ export function AssignedSheet() {
     tripShareText({ unit, from: ride.pickup_label, to: ride.dropoff_label, eta: eta ?? 'llegando', code: rideCode(ride.id) }),
   );
 
+  // Llamar / Chat / Cancelar van en la cabecera: con el sheet en su altura corta (la que
+  // abre por defecto, para dejar el mapa a la vista) siguen visibles y tocables.
+  const actions = (
+    <div className="mt-3 grid grid-cols-3 gap-2">
+      <ActionLink href={telHref} icon={<IconPhone size={20} />} label="Llamar" onClick={() => track('call_click', { from: 'assigned' })} testId="call-driver" />
+      <ActionButton icon={<IconChat size={20} />} label="Chat" badge={unread} onClick={() => openChat(true)} testId="chat-driver" />
+      <ActionButton icon={<IconClose size={20} />} label="Cancelar" tone="danger" onClick={() => setConfirm(true)} testId="cancel-ride" />
+    </div>
+  );
+
   return (
     <SheetContent
       stepKey={arrived ? 'arrived' : 'assigned'}
       header={
         arrived ? (
-          <SheetTitle
-            eyebrow="Te está esperando"
-            title="Tu IVANCAR llegó"
-            size="lg"
-            subtitle={
-              <>
-                Busca la placa <strong className="text-fg">{v.plate}</strong> · {v.make} {v.model} {v.color.toLowerCase()}
-              </>
-            }
-          />
+          <>
+            <SheetTitle
+              eyebrow="Te está esperando"
+              title="Tu IVANCAR llegó"
+              size="lg"
+              subtitle={
+                <>
+                  Busca la placa <strong className="text-fg">{v.plate}</strong> · {v.make} {v.model} {v.color.toLowerCase()}
+                </>
+              }
+            />
+            {actions}
+          </>
         ) : (
-          <SheetTitle
-            eyebrow={assignedBy === 'central' ? 'Asignada por la Central IVANCAR' : 'Unidad asignada'}
-            title={
-              <span aria-live="polite" aria-atomic="true">
-                {etaMin != null ? (
-                  <>
-                    Llega en <AnimatedNumber value={etaMin} format={formatMinutes} className="text-ivancar-yellow" data-testid="eta" />
-                  </>
-                ) : (
-                  'Llegando'
-                )}
-              </span>
-            }
-            size="lg"
-            subtitle={<>Te recoge en {ride.pickup_label}</>}
-          />
+          <>
+            <SheetTitle
+              eyebrow={assignedBy === 'central' ? 'Asignada por la Central IVANCAR' : 'Unidad asignada'}
+              title={
+                <span aria-live="polite" aria-atomic="true">
+                  {etaMin != null ? (
+                    <>
+                      Llega en <AnimatedNumber value={etaMin} format={formatMinutes} className="text-ivancar-yellow" data-testid="eta" />
+                    </>
+                  ) : (
+                    'Llegando'
+                  )}
+                </span>
+              }
+              size="lg"
+              subtitle={
+                <>
+                  <strong className="text-fg">{v.plate}</strong> · {v.make} {v.model} {v.color.toLowerCase()}
+                </>
+              }
+            />
+            {actions}
+          </>
         )
       }
       footer={
@@ -92,18 +112,8 @@ export function AssignedSheet() {
     >
       <div className="pb-4">
         <DriverCard unit={unit} />
+        <p className="mt-3 text-[14px] leading-snug text-fg-65">Te recoge en {ride.pickup_label}</p>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <ActionLink
-            href={telHref}
-            icon={<IconPhone size={20} />}
-            label="Llamar"
-            onClick={() => track('call_click', { from: 'assigned' })}
-            testId="call-driver"
-          />
-          <ActionButton icon={<IconChat size={20} />} label="Chat" badge={unread} onClick={() => openChat(true)} testId="chat-driver" />
-          <ActionButton icon={<IconClose size={20} />} label="Cancelar" tone="danger" onClick={() => setConfirm(true)} testId="cancel-ride" />
-        </div>
         <p className="mt-3 text-center text-[12px] text-fg-55">Conductor y unidad de demostración.</p>
       </div>
 

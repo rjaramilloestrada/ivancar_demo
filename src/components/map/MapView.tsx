@@ -18,9 +18,10 @@ import {
 } from 'react';
 import { IconAlert } from '@/components/ui/icons';
 import { cn } from '@/lib/cn';
-import { map as mapTokens } from '@/theme/tokens';
+import { basemap, map as mapTokens } from '@/theme/tokens';
 import type { LatLng } from '@/types';
-import { MapBackdrop } from './MapBackdrop';
+import { addBasemap, type BasemapErrorKind, type BasemapHandle } from './basemap';
+import { MapSkeleton } from './MapSkeleton';
 
 /** Píxeles del mapa tapados por la UI (barra superior, bottom sheet, panel lateral). */
 export interface MapInsets {
@@ -40,6 +41,8 @@ export interface FlyOptions {
 export interface FitOptions extends FlyOptions {
   /** Margen extra alrededor de los puntos, además de los insets (px). Default 48. */
   padding?: number;
+  /** Margen superior propio (px), p. ej. para la etiqueta que va encima de un marcador. */
+  paddingTop?: number;
   /** Zoom máximo al encuadrar. Default 16. */
   maxZoom?: number;
 }
@@ -52,6 +55,11 @@ export interface MapViewHandle {
   flyTo(latlng: LatLng, zoom?: number, opts?: FlyOptions): void;
   /** Encuadra los puntos dentro del área visible. */
   fitBounds(points: LatLng[], opts?: FitOptions): void;
+  /**
+   * Cámara que sigue (p. ej. al auto): encuadra los puntos con un movimiento suave y corto.
+   * Si el zoom casi no cambia solo desplaza; si cambia, acerca o aleja sin el "salto" de flyTo.
+   */
+  follow(points: LatLng[], opts?: FitOptions): void;
   /** Coordenada bajo el centro del área visible (donde está el pin). */
   getVisibleCenter(): LatLng | null;
 }
@@ -74,11 +82,12 @@ export interface MapViewProps {
   /** Muestra estados de carga y de error de tiles. Default true. */
   showStatus?: boolean;
   /**
-   * Entrada animada: el mapa abre en esta vista (p. ej. Guayaquil completo) y vuela suave
-   * hasta `center`/`zoom`. Sin efecto con prefers-reduced-motion. Mientras dura, el pin no
-   * se levanta y emite su posición inicial al terminar.
+   * Entrada animada: el mapa abre en esta vista (por defecto, el mismo centro un poco más
+   * lejos) y, cuando el mapa base ya se dibujó, se acerca hasta `center`/`zoom` en un vuelo
+   * corto. Sin efecto con prefers-reduced-motion. Mientras dura, el pin no se levanta y emite
+   * su posición inicial al terminar (evento `iv:introend`).
    */
-  intro?: { center: LatLng; zoom: number };
+  intro?: { zoom: number; center?: LatLng };
   /** Se llama una vez con la instancia Leaflet lista. */
   onReady?: (map: L.Map) => void;
   /** Cambios de estado de los tiles (carga / listo / sin conexión). */
@@ -109,8 +118,6 @@ export function useMapView(): MapViewContextValue {
   return ctx;
 }
 
-/** Tile transparente para errores: nunca se ve un ícono de imagen rota. */
-const EMPTY_TILE = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 /** Área de servicio aproximada (Guayaquil, Samborondón, Vía a la Costa) con holgura. */
 const MAX_BOUNDS: L.LatLngBoundsExpression = [
   [-2.75, -80.45],
@@ -123,13 +130,16 @@ function visibleOffset(i: MapInsets) {
 }
 
 /**
- * Mapa Leaflet con tiles oscuros (ver `tokens.map.tiles`), tema IVANCAR y API pensada para dos usos:
- * pantalla completa del pasajero (con bottom sheet encima) y mapa de flota de la central.
+ * Mapa Leaflet con mapa base vectorial oscuro (OpenFreeMap + MapLibre GL, ver `basemap.ts`),
+ * tema IVANCAR y API pensada para dos usos: pantalla completa del pasajero (con bottom sheet
+ * encima) y mapa de flota de la central.
  *
  * - Ocupa su contenedor (`absolute inset-0`): el padre debe ser `relative` con alto.
- * - Sin controles de zoom; atribución del proveedor + OSM discreta, siempre por encima del sheet.
- * - Tiles @2x en retina cuando el proveedor lo ofrece (placeholder `{r}`).
- * - Estados: carga (fondo de mapa ilustrado) y error de tiles / sin red (aviso + reintentar).
+ * - Sin controles de zoom; atribución OpenFreeMap / OpenMapTiles / OSM discreta, siempre por
+ *   encima del sheet.
+ * - Zoom fraccionario: los vectores se redibujan nítidos a cualquier zoom y en retina.
+ * - Estados: carga (fondo liso con skeleton) y error (sin red o sin WebGL: aviso + reintentar).
+ * - Emite `iv:usergesture` en el mapa Leaflet cuando la persona arrastra, pellizca o usa la rueda.
  * - Crea su propia instancia (no MapContainer) para controlar el ciclo de vida en StrictMode.
  */
 export function MapView({
@@ -138,7 +148,7 @@ export function MapView({
   insets: insetsProp,
   interactive = true,
   minZoom = 10,
-  maxZoom = 18,
+  maxZoom = basemap.maxZoom,
   vignette = true,
   showStatus = true,
   intro,
@@ -153,9 +163,8 @@ export function MapView({
   const wrapRef = useRef<HTMLDivElement>(null);
   const elRef = useRef<HTMLDivElement>(null);
   const [ctx, setCtx] = useState<LeafletContextInterface | null>(null);
-  const tilesRef = useRef<L.TileLayer | null>(null);
-  const labelsRef = useRef<L.TileLayer | null>(null);
   const [status, setStatus] = useState<TileStatus>('loading');
+  const [errorKind, setErrorKind] = useState<BasemapErrorKind>('network');
   const [everLoaded, setEverLoaded] = useState(false);
 
   const insets: MapInsets = {
@@ -182,15 +191,19 @@ export function MapView({
     const el = elRef.current;
     if (!el) return;
     const withIntro = !!intro && !reduceRef.current;
+    const introCenter = intro?.center ?? center;
     const map = L.map(el, {
-      center: withIntro ? intro.center : center,
+      center: withIntro ? introCenter : center,
       zoom: withIntro ? intro.zoom : zoom,
       minZoom,
       maxZoom,
       zoomControl: false,
       attributionControl: false,
-      fadeAnimation: !reduceRef.current,
-      zoomSnap: 1, // zoom entero: sin costuras entre tiles ni tiles borrosos
+      fadeAnimation: false,
+      // Zoom libre: el mapa base es vectorial, no hay teselas que "encajar".
+      zoomSnap: 0,
+      zoomDelta: 1,
+      wheelPxPerZoomLevel: 90,
       bounceAtZoomLimits: false,
       maxBounds: MAX_BOUNDS,
       maxBoundsViscosity: 0.8,
@@ -212,90 +225,86 @@ export function MapView({
     map.on('layeradd layerremove', untabAttribution);
     // El centro inicial va al centro del área visible, no al del contenedor.
     const o0 = visibleOffset(insetsRef.current);
-    if (!withIntro && (o0.x || o0.y)) map.setView(map.unproject(map.project(center, zoom).subtract([o0.x, o0.y]), zoom), zoom, { animate: false });
+    if (o0.x || o0.y) {
+      const c0 = withIntro ? introCenter : center;
+      const z0 = withIntro ? intro.zoom : zoom;
+      map.setView(map.unproject(map.project(c0, z0).subtract([o0.x, o0.y]), z0), z0, { animate: false });
+    }
 
-    // Entrada: de la ciudad completa a la ubicación, tras pintar los primeros tiles.
+    // Gestos de la persona (no los movimientos programados): arrastre, pellizco, rueda, doble toque.
+    const container = map.getContainer();
+    const gesture = () => map.fire('iv:usergesture');
+    const onTouch = (e: TouchEvent) => e.touches.length > 1 && gesture();
+    map.on('dragstart', gesture);
+    container.addEventListener('wheel', gesture, { passive: true });
+    container.addEventListener('touchstart', onTouch, { passive: true });
+    container.addEventListener('dblclick', gesture);
+
+    // Entrada: vuelo corto hacia la ubicación cuando el mapa base ya se dibujó (nunca se ve
+    // una imagen estirada: los vectores se redibujan en cada cuadro del vuelo).
     let introTimer = 0;
+    let introFallback = 0;
     const endIntro = () => {
       if (!introActive.current) return;
       introActive.current = false;
       internalMove.current = false;
       introTarget.current = null;
       clearTimeout(introTimer);
-      for (const l of [tilesRef.current, labelsRef.current]) if (l) l.options.updateWhenZooming = true;
+      clearTimeout(introFallback);
       map.fire('iv:introend');
+    };
+    const startIntroFlight = () => {
+      const t = introTarget.current;
+      if (!t || t.flying) return;
+      t.flying = true;
+      clearTimeout(introFallback);
+      const o = visibleOffset(insetsRef.current);
+      const c = map.unproject(map.project(t.center, t.zoom).subtract([o.x, o.y]), t.zoom);
+      map.once('moveend', endIntro);
+      map.flyTo(c, t.zoom, { duration: 1.5, easeLinearity: 0.25 });
     };
     if (withIntro) {
       introActive.current = true;
       internalMove.current = true;
       introTarget.current = { center, zoom, flying: false };
-      introTimer = window.setTimeout(() => {
-        const t = introTarget.current;
-        if (!t) return;
-        t.flying = true;
-        const o = visibleOffset(insetsRef.current);
-        const c = map.unproject(map.project(t.center, t.zoom).subtract([o.x, o.y]), t.zoom);
-        map.once('moveend', endIntro);
-        map.flyTo(c, t.zoom, { duration: 1.9, easeLinearity: 0.2 });
-      }, 420);
-      // Si el usuario toma el mapa, la entrada termina ahí.
-      map.once('dragstart zoomstart', (e: L.LeafletEvent) => {
-        if (e.type === 'dragstart' || !introTarget.current?.flying) endIntro();
-      });
+      // Si el mapa base tarda (red lenta), se vuela igual tras 2,5 s.
+      introFallback = window.setTimeout(startIntroFlight, 2500);
+      // Si la persona toma el mapa, la entrada termina ahí.
+      map.once('iv:usergesture', endIntro);
     }
 
-    const provider = mapTokens.tiles;
-    const tileOpts: L.TileLayerOptions = {
-      subdomains: provider.subdomains ?? 'abc',
-      maxZoom: 20,
-      maxNativeZoom: provider.maxNativeZoom,
-      detectRetina: false, // con {r} ya se piden tiles @2x; sin {r}, mejor nítido a escala 1
-      errorTileUrl: EMPTY_TILE,
-      keepBuffer: 3,
-      // Durante la entrada no se piden tiles de cada nivel intermedio: la ciudad se amplía
-      // y al aterrizar entran los tiles nítidos del destino (menos red en el arranque).
-      updateWhenZooming: !withIntro,
-    };
-    const tiles = L.tileLayer(provider.url, { ...tileOpts, attribution: provider.attribution, className: 'iv-tiles' });
-    const labels = provider.labelsUrl ? L.tileLayer(provider.labelsUrl, { ...tileOpts, className: 'iv-tiles-labels' }) : null;
-
-    let consecutiveErrors = 0;
+    // Mapa base vectorial.
     let current: TileStatus = 'loading';
-    const set = (s: TileStatus) => {
+    let base: BasemapHandle | null = null;
+    const onBaseStatus = (s: TileStatus, kind?: BasemapErrorKind) => {
+      if (s === 'ready') {
+        setEverLoaded(true);
+        untabAttribution();
+        // Pequeña pausa para que el primer cuadro se vea quieto antes de volar.
+        if (introTarget.current && !introTarget.current.flying) introTimer = window.setTimeout(startIntroFlight, 180);
+      }
+      if (s === 'error' && kind) setErrorKind(kind);
       if (s === current) return;
       current = s;
       setStatus(s);
       onStatusRef.current?.(s);
     };
-    tiles.on('tileload', (e: L.TileEvent) => {
-      // Tras un error, Leaflet carga el tile vacío (data:) y emite tileload: no cuenta.
-      if ((e.tile as HTMLImageElement).src.startsWith('data:')) return;
-      consecutiveErrors = 0;
-      setEverLoaded(true);
-      if (current === 'error') set('ready');
-    });
-    tiles.on('load', () => {
-      if (consecutiveErrors === 0) set('ready');
-    });
-    tiles.on('tileerror', () => {
-      consecutiveErrors++;
-      if (consecutiveErrors >= 3) set('error');
-    });
-    tiles.addTo(map);
-    labels?.addTo(map);
-    tilesRef.current = tiles;
-    labelsRef.current = labels;
+    base = addBasemap(map, { onStatus: onBaseStatus });
 
-    // Si en 12 s no cargó nada, se considera error (red colgada).
-    const slow = setTimeout(() => {
-      if (current === 'loading') set('error');
-    }, 12_000);
-
+    // Reintentar = quitar el mapa base y crearlo de nuevo. Se espera un momento entre ambos:
+    // MapLibre libera su pool de workers de forma asíncrona y, si el worker no había llegado a
+    // cargar (sin red), el mapa nuevo debe arrancar con workers nuevos y no con los rotos.
+    let retryTimer = 0;
+    let disposed = false;
     const retry = () => {
-      consecutiveErrors = 0;
-      if (current === 'error') set('loading');
-      tiles.redraw();
-      labels?.redraw();
+      if (current !== 'error' || retryTimer) return;
+      base?.remove();
+      base = null;
+      onBaseStatus('loading');
+      retryTimer = window.setTimeout(() => {
+        retryTimer = 0;
+        if (!disposed) base = addBasemap(map, { onStatus: onBaseStatus });
+      }, 250);
     };
     window.addEventListener('online', retry);
     (map as L.Map & { _ivRetry?: () => void })._ivRetry = retry;
@@ -308,13 +317,18 @@ export function MapView({
     onReadyRef.current?.(map);
 
     return () => {
-      clearTimeout(slow);
+      disposed = true;
+      clearTimeout(retryTimer);
       clearTimeout(introTimer);
+      clearTimeout(introFallback);
       introActive.current = false;
       internalMove.current = false;
       window.removeEventListener('online', retry);
+      container.removeEventListener('wheel', gesture);
+      container.removeEventListener('touchstart', onTouch);
+      container.removeEventListener('dblclick', gesture);
       ro.disconnect();
-      tilesRef.current = null;
+      base?.remove();
       map.remove();
       setCtx(null);
     };
@@ -382,6 +396,15 @@ export function MapView({
       if (animate) map.flyTo(c, targetZoom, { duration: opts.duration ?? 0.9, easeLinearity: 0.3 });
       else map.setView(c, targetZoom, { animate: false });
     };
+    const fitOptions = (opts: FitOptions): L.FitBoundsOptions => {
+      const i = insetsRef.current;
+      const pad = opts.padding ?? 48;
+      return {
+        paddingTopLeft: [i.left + pad, i.top + (opts.paddingTop ?? pad)],
+        paddingBottomRight: [i.right + pad, i.bottom + pad],
+        maxZoom: opts.maxZoom ?? 16,
+      };
+    };
     return {
       get map() {
         return map;
@@ -390,16 +413,28 @@ export function MapView({
       fitBounds(points, opts = {}) {
         if (!map || points.length === 0) return;
         if (points.length === 1) return flyTo(points[0], opts.maxZoom ?? 16, opts);
-        const i = insetsRef.current;
-        const pad = opts.padding ?? 48;
-        const o: L.FitBoundsOptions = {
-          paddingTopLeft: [i.left + pad, i.top + pad],
-          paddingBottomRight: [i.right + pad, i.bottom + pad],
-          maxZoom: opts.maxZoom ?? 16,
-        };
+        const o = fitOptions(opts);
         const animate = (opts.animate ?? true) && !reduceRef.current;
         if (animate) map.flyToBounds(points, { ...o, duration: opts.duration ?? 0.9, easeLinearity: 0.3 });
         else map.fitBounds(points, { ...o, animate: false });
+      },
+      follow(points, opts = {}) {
+        if (!map || points.length === 0 || introActive.current) return;
+        const o = fitOptions(opts);
+        const bounds = L.latLngBounds(points.map((p) => L.latLng(p[0], p[1])));
+        const tl = L.point(o.paddingTopLeft as L.PointTuple);
+        const br = L.point(o.paddingBottomRight as L.PointTuple);
+        let z = map.getBoundsZoom(bounds, false, tl.add(br));
+        z = Math.min(o.maxZoom ?? 16, z);
+        // Centro del rectángulo útil (descontando insets y margen asimétricos).
+        const sw = map.project(bounds.getSouthWest(), z);
+        const ne = map.project(bounds.getNorthEast(), z);
+        const center = map.unproject(sw.add(ne).divideBy(2).add(br.subtract(tl).divideBy(2)), z);
+        const animate = (opts.animate ?? true) && !reduceRef.current;
+        if (!animate) return void map.setView(center, z, { animate: false });
+        const dz = Math.abs(z - map.getZoom());
+        if (dz < 0.2) map.panTo(center, { animate: true, duration: opts.duration ?? 0.9, easeLinearity: 0.9 });
+        else map.flyTo(center, z, { duration: opts.duration ?? 0.9, easeLinearity: 0.9 });
       },
       getVisibleCenter() {
         if (!map) return null;
@@ -425,14 +460,14 @@ export function MapView({
   const retry = () => (map as (L.Map & { _ivRetry?: () => void }) | null)?._ivRetry?.();
 
   return (
-    <div ref={wrapRef} style={style} data-tile-status={status} className={cn('absolute inset-0 isolate overflow-hidden bg-[#0e0e0f]', className)}>
+    <div ref={wrapRef} style={style} data-tile-status={status} className={cn('absolute inset-0 isolate overflow-hidden bg-map', className)}>
       <div ref={elRef} role="region" aria-label={ariaLabel} tabIndex={-1} className="iv-map absolute inset-0 z-0" />
 
       {showStatus && (
-        <MapBackdrop
+        <MapSkeleton
           className={cn(
             'z-[1] transition-opacity duration-500 ease-out',
-            status === 'ready' || (status === 'error' && everLoaded) ? 'pointer-events-none opacity-0' : 'opacity-100',
+            status === 'ready' || everLoaded ? 'pointer-events-none opacity-0' : 'opacity-100',
           )}
         />
       )}
@@ -462,8 +497,10 @@ export function MapView({
             <IconAlert size={18} />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold text-fg">Mapa sin conexión</span>
-            <span className="block text-xs text-fg-65">Puedes seguir pidiendo tu taxi.</span>
+            <span className="block text-sm font-semibold text-fg">{errorKind === 'webgl' ? 'No pudimos dibujar el mapa' : 'El mapa no cargó'}</span>
+            <span className="block text-xs text-fg-65">
+              {errorKind === 'webgl' ? 'Tu navegador no permitió el mapa. ' : 'Revisa tu conexión. '}Puedes seguir pidiendo tu taxi.
+            </span>
           </span>
           <button
             type="button"

@@ -8,22 +8,21 @@
  */
 
 .iv-map.leaflet-container {
-  background: #0e0e0f;
+  background: var(--color-map);
   font-family: inherit;
   outline: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* La base de Esri Dark Gray es algo más clara que la UI (#050505): se oscurece un poco
-   para que el amarillo y las tarjetas resalten. brightness es barato en GPU. */
-.iv-map .iv-tiles {
-  filter: brightness(0.78) contrast(1.06);
+/* Lienzo de MapLibre (mapa base vectorial) dentro del pane de tiles de Leaflet: sin filtros,
+   los colores salen del estilo (basemapStyle.ts). */
+.iv-map .leaflet-gl-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
 }
-
-/* Sin el flash blanco de tiles mientras cargan. */
-.iv-map .leaflet-tile-container img,
-.iv-map .leaflet-tile {
-  background: transparent;
+.iv-map .leaflet-gl-layer canvas {
+  outline: none;
 }
 
 /* Controles por debajo/encima de lo que tapa la UI (bottom sheet, barra superior).
@@ -44,13 +43,13 @@
   right: var(--map-inset-right, 0px);
 }
 
-/* Atribución OSM + CARTO: obligatoria, discreta. */
+/* Atribución OpenFreeMap + OpenMapTiles + OSM: obligatoria, discreta y legible. */
 .iv-map .leaflet-control-attribution {
   margin: 0 6px 6px 0;
   padding: 1px 7px;
   border-radius: 9999px;
-  background: rgb(0 0 0 / 0.55);
-  color: rgb(255 255 255 / 0.55);
+  background: rgb(0 0 0 / 0.6);
+  color: rgb(255 255 255 / 0.62);
   font-size: 10px;
   line-height: 16px;
   letter-spacing: 0.01em;
