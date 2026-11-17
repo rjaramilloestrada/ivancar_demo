@@ -79,7 +79,10 @@ function check(name, pass, detail = '') {
   results.push({ name, pass: !!pass, detail });
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? `  · ${detail}` : ''}`);
 }
-const IGNORED_CONSOLE = [/Service Worker registration blocked/];
+// El aviso "GPU stall due to ReadPixels" lo emite el driver por software de Chromium headless
+// (SwiftShader) ante CUALQUIER lienzo WebGL al componer el cuadro; no viene del código de la
+// app (se reproduce con una página que solo limpia un canvas WebGL) y no existe con GPU real.
+const IGNORED_CONSOLE = [/Service Worker registration blocked/, /^\[\.WebGL-[^\]]+\]GL Driver Message \(OpenGL, Performance, [A-Z_]+, High\): GPU stall due to ReadPixels/];
 
 function watch(page, tag, { allowThirdParty = [] } = {}) {
   const issues = [];
@@ -132,6 +135,30 @@ async function waitHome(page) {
     timeout: 15_000,
   }).catch(() => {});
   await sleep(600);
+}
+
+/**
+ * Cuánto ocupa la ruta amarilla pendiente en el alto/ancho útil del mapa (entre la barra
+ * superior de 112 px y el borde superior del sheet). Devuelve la mayor de las dos fracciones:
+ * una ruta este-oeste llena el ancho antes que el alto.
+ */
+async function routeFill(page) {
+  return page.evaluate(() => {
+    const sheet = document.querySelector('section[aria-label="Pedido de taxi"]');
+    const bottom = sheet ? sheet.getBoundingClientRect().top : innerHeight;
+    let b = null;
+    for (const el of document.querySelectorAll('path.iv-route')) {
+      if ((el.getAttribute('stroke') || '').toUpperCase() !== '#F6C90E' || el.getAttribute('stroke-opacity') !== '1') continue;
+      const r = el.getBoundingClientRect();
+      const x0 = Math.max(0, r.left), y0 = Math.max(112, r.top), x1 = Math.min(innerWidth, r.right), y1 = Math.min(bottom, r.bottom);
+      if (x1 <= x0 || y1 <= y0) continue;
+      b = b ? { x0: Math.min(b.x0, x0), y0: Math.min(b.y0, y0), x1: Math.max(b.x1, x1), y1: Math.max(b.y1, y1) } : { x0, y0, x1, y1 };
+    }
+    if (!b) return { fill: 0, detail: 'sin ruta visible' };
+    const h = (b.y1 - b.y0) / (bottom - 112);
+    const w = (b.x1 - b.x0) / innerWidth;
+    return { fill: Math.max(h, w), detail: `${Math.round(b.x1 - b.x0)}×${Math.round(b.y1 - b.y0)} px en ${innerWidth}×${Math.round(bottom - 112)} útiles` };
+  });
 }
 
 async function hrefOf(page, testId) {
@@ -237,6 +264,20 @@ const SCENARIOS = {
     check(`[${tag}] Emergencia: diálogo dice que es simulado`, /simulaci/i.test(sosText ?? ''));
     await shot(page, `${tag}-p7-emergencia`);
     await page.keyboard.press('Escape');
+    // La cámara sigue al auto; si la persona mueve el mapa se pausa y aparece Recentrar
+    // (con los tiempos reales: con ?sim= el viaje termina antes de poder arrastrar).
+    await page.mouse.move(78, 338);
+    await page.mouse.down();
+    await page.mouse.move(148, 398, { steps: 8 });
+    await page.mouse.up();
+    const rc = page.locator('[data-testid=recenter]');
+    await rc.waitFor({ state: 'visible', timeout: 3000 }).catch(() => {});
+    check(`[${tag}] mover el mapa en viaje muestra "Recentrar"`, await rc.isVisible());
+    if (await rc.isVisible()) {
+      await rc.click();
+      await sleep(300);
+      check(`[${tag}] Recentrar reanuda la cámara (el botón se oculta)`, !(await rc.isVisible()));
+    }
 
     await stepIs(page, 'rating', 25_000);
     const totalS = (Date.now() - t0) / 1000;
@@ -637,8 +678,10 @@ const SCENARIOS = {
       await shot(page, `${tag}-p1`);
       await page.locator('[data-testid=suggested-place]').first().click();
       await page.waitForSelector('[data-testid=cta-request]:not([aria-busy])', { timeout: 8000 });
-      await sleep(700);
+      await sleep(1500); // encuadre de la ruta (vuelo de 0,9 s)
       await shot(page, `${tag}-p3`);
+      const fill = await routeFill(page);
+      check(`[${tag}] la ruta ocupa ≥ 50 % del área útil del mapa`, fill.fill >= 0.5, `${Math.round(fill.fill * 100)} % · ${fill.detail}`);
       await page.locator('[data-testid=cta-request]').click();
       await stepIs(page, 'assigned', 10_000);
       await sleep(800);

@@ -74,7 +74,10 @@ function check(name, pass, detail = '') {
   results.push({ name, pass: !!pass, detail });
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail ? `  · ${detail}` : ''}`);
 }
-const IGNORED_CONSOLE = [/Service Worker registration blocked/];
+// El aviso "GPU stall due to ReadPixels" lo emite el driver por software de Chromium headless
+// (SwiftShader) ante CUALQUIER lienzo WebGL al componer el cuadro; no viene del código de la
+// app (se reproduce con una página que solo limpia un canvas WebGL) y no existe con GPU real.
+const IGNORED_CONSOLE = [/Service Worker registration blocked/, /^\[\.WebGL-[^\]]+\]GL Driver Message \(OpenGL, Performance, [A-Z_]+, High\): GPU stall due to ReadPixels/];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Junta errores de consola, de página y respuestas propias ≥ 400 de varias páginas. */
