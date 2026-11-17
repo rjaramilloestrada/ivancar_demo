@@ -3,6 +3,7 @@ import { Button, ButtonLink, Eyebrow, IconChevronRight, IconInfo, IconPhone, Ico
 import { track } from '@/lib/analytics';
 import { formatDistance, haversine } from '@/lib/geo';
 import type { AddressState } from '@/lib/geocode';
+import { ROAD_FACTOR } from '@/lib/routing';
 import { greeting } from '@/lib/greeting';
 import { telHref, whatsappHref } from '@/lib/links';
 import { savedPlaces, suggestPlaces } from '@/mocks/places';
@@ -31,7 +32,18 @@ export const savedSpot = (s: SavedPlace): Spot => ({
 });
 
 /** P1 · Inicio: saludo, recogida en vivo y destinos de un toque. */
-export function HomeSheet({ address, moving, geo }: { address: AddressState | null; moving: boolean; geo: GeoStatus }) {
+export function HomeSheet({
+  address,
+  moving,
+  geo,
+  onRetryGeo,
+}: {
+  address: AddressState | null;
+  moving: boolean;
+  geo: GeoStatus;
+  /** Reintenta la geolocalización. Si no se pasa, no se ofrece la acción. */
+  onRetryGeo?: () => void;
+}) {
   const pickup = useRide((s) => s.pickup);
   const openDestination = useRide((s) => s.openDestination);
   const chooseDestination = useRide((s) => s.chooseDestination);
@@ -42,7 +54,9 @@ export function HomeSheet({ address, moving, geo }: { address: AddressState | nu
   const pick = (spot: Spot) => {
     if (ready) chooseDestination(spot);
   };
-  const dist = (p: { lat: number; lng: number }) => (pickup ? formatDistance(haversine([pickup.lat, pickup.lng], [p.lat, p.lng])) : '');
+  // Distancia por calle aproximada: la línea recta se escala con el factor vial de las rutas de respaldo.
+  const dist = (p: { lat: number; lng: number }) =>
+    pickup ? `≈ ${formatDistance(haversine([pickup.lat, pickup.lng], [p.lat, p.lng]) * ROAD_FACTOR)}` : '';
 
   return (
     <SheetContent
@@ -72,6 +86,16 @@ export function HomeSheet({ address, moving, geo }: { address: AddressState | nu
                   <IconInfo size={12} className="shrink-0 text-ivancar-yellow" />
                   Ubicación aproximada · mueve el mapa
                 </span>
+              )}
+              {(geo === 'denied' || geo === 'unavailable') && onRetryGeo && (
+                <button
+                  type="button"
+                  onClick={onRetryGeo}
+                  className="mt-1 inline-flex min-h-8 items-center text-[13px] font-semibold text-ivancar-yellow underline-offset-2 hover:underline"
+                  data-testid="retry-geo"
+                >
+                  Usar mi ubicación
+                </button>
               )}
             </span>
           </div>

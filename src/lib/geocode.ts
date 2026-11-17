@@ -94,15 +94,33 @@ export interface ReverseResult {
 }
 
 export const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/reverse';
+export const NOMINATIM_SEARCH_URL = 'https://nominatim.openstreetmap.org/search';
 const MIN_INTERVAL_MS = 1100;
 const FAIL_PAUSE_MS = 60_000;
+const TIMEOUT_MS = 4000;
+
+/** Zona de servicio del demo (Guayaquil, Samborondón, Durán y Vía a la Costa). */
+export const SERVICE_BOX = { latMin: -2.4, latMax: -1.9, lngMin: -80.2, lngMax: -79.7 } as const;
 
 const reverseCache = new Map<string, ReverseResult | null>();
+const searchCache = new Map<string, DirectResult[]>();
 let lastRequestAt = 0;
 let failures = 0;
 let pausedUntil = 0;
-/** Solo una petición pendiente a la vez: la nueva reemplaza a la anterior. */
-let pending: { key: string; latlng: LatLng; resolve: (r: ReverseResult | null) => void; signal?: AbortSignal } | null = null;
+
+/**
+ * Control de ritmo compartido por la búsqueda inversa y la directa (política de uso de
+ * Nominatim): una sola petición pendiente a la vez (la nueva reemplaza a la anterior),
+ * al menos MIN_INTERVAL_MS entre envíos, pausa tras fallos y nada si no hay red.
+ */
+interface Job {
+  url: string;
+  signal?: AbortSignal;
+  /** Procesa el JSON y deja el resultado en su caché. */
+  accept: (json: unknown) => unknown;
+  resolve: (r: unknown) => void;
+}
+let pending: Job | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 const rkey = (p: LatLng) => `${p[0].toFixed(4)},${p[1].toFixed(4)}`; // ~11 m
@@ -122,19 +140,17 @@ function parse(j: NominatimJson): ReverseResult | null {
   return { street, area };
 }
 
-async function send(job: NonNullable<typeof pending>) {
+async function send(job: Job) {
   lastRequestAt = Date.now();
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
   job.signal?.addEventListener('abort', onAbort, { once: true });
-  const timeout = setTimeout(() => ctrl.abort(), 4000);
+  const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
   try {
-    const url = `${NOMINATIM_URL}?format=jsonv2&lat=${job.latlng[0].toFixed(6)}&lon=${job.latlng[1].toFixed(6)}&zoom=18&addressdetails=1&accept-language=es`;
-    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+    const res = await fetch(job.url, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error(String(res.status));
-    const result = parse((await res.json()) as NominatimJson);
+    const result = job.accept(await res.json());
     failures = 0;
-    reverseCache.set(job.key, result);
     job.resolve(result);
   } catch {
     // Abortar por el llamador no cuenta como fallo; el timeout sí.
@@ -162,6 +178,18 @@ function schedule() {
   }, wait);
 }
 
+function offline(): boolean {
+  return Date.now() < pausedUntil || (typeof navigator !== 'undefined' && navigator.onLine === false);
+}
+
+function enqueue<T>(url: string, accept: (json: unknown) => T, signal?: AbortSignal): Promise<T | null> {
+  return new Promise((resolve) => {
+    pending?.resolve(null); // se descarta la anterior: sin ráfagas
+    pending = { url, signal, accept, resolve: resolve as (r: unknown) => void };
+    schedule();
+  });
+}
+
 /**
  * Dirección por Nominatim. Resuelve `null` si no hay respuesta útil, si falla, si está en
  * pausa por fallos o si se reemplaza por una petición más nueva. Nunca rechaza.
@@ -169,14 +197,152 @@ function schedule() {
 export function reverseGeocode(latlng: LatLng, { signal }: { signal?: AbortSignal } = {}): Promise<ReverseResult | null> {
   const k = rkey(latlng);
   if (reverseCache.has(k)) return Promise.resolve(reverseCache.get(k) ?? null);
-  if (Date.now() < pausedUntil || (typeof navigator !== 'undefined' && navigator.onLine === false)) {
-    return Promise.resolve(null);
+  if (offline()) return Promise.resolve(null);
+  const url = `${NOMINATIM_URL}?format=jsonv2&lat=${latlng[0].toFixed(6)}&lon=${latlng[1].toFixed(6)}&zoom=18&addressdetails=1&accept-language=es`;
+  return enqueue(
+    url,
+    (json) => {
+      const r = parse(json as NominatimJson);
+      reverseCache.set(k, r);
+      return r;
+    },
+    signal,
+  );
+}
+
+/* ------------------------------------------------------- Búsqueda directa */
+
+export interface DirectResult {
+  id: string;
+  /** Nombre corto: "Avenida Francisco de Orellana", "Mall del Sol". */
+  title: string;
+  /** Barrio y ciudad: "Kennedy, Guayaquil". */
+  subtitle: string;
+  lat: number;
+  lng: number;
+}
+
+/** Mínimo de caracteres para consultar (política de uso: nada de autocompletar por tecla). */
+export const SEARCH_MIN_CHARS = 3;
+export const SEARCH_DEBOUNCE_MS = 450;
+const SEARCH_LIMIT = 6;
+
+interface SearchJson {
+  place_id?: number | string;
+  osm_type?: string;
+  osm_id?: number | string;
+  lat?: string;
+  lon?: string;
+  name?: string;
+  display_name?: string;
+  address?: Record<string, string | undefined>;
+}
+
+const cleanQuery = (q: string) => q.trim().replace(/\s+/g, ' ');
+const skey = (q: string) => cleanQuery(q).toLowerCase();
+
+function parseSearch(json: unknown): DirectResult[] {
+  if (!Array.isArray(json)) return [];
+  const out: DirectResult[] = [];
+  const seen = new Set<string>();
+  for (const raw of json as SearchJson[]) {
+    const lat = Number(raw.lat);
+    const lng = Number(raw.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    const a = raw.address ?? {};
+    const first = raw.display_name?.split(',')[0]?.trim();
+    const title = raw.name || a.road || first || '';
+    if (!title) continue;
+    const area = a.neighbourhood ?? a.quarter ?? a.suburb ?? a.city_district ?? null;
+    const city = a.city ?? a.town ?? a.village ?? a.municipality ?? a.county ?? null;
+    const road = a.road && a.road !== title ? a.road : null;
+    const subtitle = [road && a.house_number ? `${road} ${a.house_number}` : road, area, city]
+      .filter((x, i, arr): x is string => !!x && x !== title && arr.indexOf(x) === i)
+      .slice(0, 2)
+      .join(', ');
+    // Las calles llegan en varios tramos con el mismo nombre: se deja uno por nombre y barrio.
+    const k = `${title}|${subtitle}`.toLowerCase();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push({ id: `osm-${raw.osm_type ?? 'x'}-${raw.osm_id ?? raw.place_id ?? out.length}`, title, subtitle: subtitle || 'Guayas', lat, lng });
   }
-  return new Promise((resolve) => {
-    pending?.resolve(null); // se descarta la anterior: sin ráfagas
-    pending = { key: k, latlng, resolve, signal };
-    schedule();
-  });
+  return out;
+}
+
+/**
+ * Búsqueda directa de direcciones y lugares con Nominatim, acotada a la zona de servicio.
+ * Resuelve la lista (vacía si no hay coincidencias) o `null` si no hubo respuesta: falla,
+ * sin red, en pausa, texto demasiado corto o reemplazada por una petición más nueva.
+ */
+export function searchPlaces(query: string, { signal }: { signal?: AbortSignal } = {}): Promise<DirectResult[] | null> {
+  const q = cleanQuery(query);
+  if (q.length < SEARCH_MIN_CHARS) return Promise.resolve(null);
+  const k = skey(q);
+  const hit = searchCache.get(k);
+  if (hit) return Promise.resolve(hit);
+  if (offline()) return Promise.resolve(null);
+  const b = SERVICE_BOX;
+  const url =
+    `${NOMINATIM_SEARCH_URL}?format=jsonv2&q=${encodeURIComponent(q)}&accept-language=es&countrycodes=ec` +
+    `&viewbox=${b.lngMin},${b.latMax},${b.lngMax},${b.latMin}&bounded=1&addressdetails=1&limit=${SEARCH_LIMIT}`;
+  return enqueue(
+    url,
+    (json) => {
+      const r = parseSearch(json);
+      searchCache.set(k, r);
+      return r;
+    },
+    signal,
+  );
+}
+
+/** Solo para pruebas: reinicia caché, ritmo y pausas. */
+export function resetGeocodeForTests() {
+  reverseCache.clear();
+  searchCache.clear();
+  lastRequestAt = 0;
+  failures = 0;
+  pausedUntil = 0;
+  pending?.resolve(null);
+  pending = null;
+  if (timer) clearTimeout(timer);
+  timer = null;
+}
+
+export interface DirectSearchState {
+  results: DirectResult[];
+  /** true mientras se espera (incluye el debounce). */
+  loading: boolean;
+  /** true si no hubo respuesta (sin red, fallo o pausa). */
+  failed: boolean;
+  /** true si ya hay una consulta resuelta para el texto actual. */
+  done: boolean;
+}
+
+/** Búsqueda directa con debounce para un campo de texto. Inactiva con menos de 3 caracteres. */
+export function useDirectSearch(query: string, { debounceMs = SEARCH_DEBOUNCE_MS }: { debounceMs?: number } = {}): DirectSearchState {
+  const q = cleanQuery(query);
+  const active = q.length >= SEARCH_MIN_CHARS;
+  const k = skey(q);
+  const [state, setState] = useState<{ key: string; results: DirectResult[] | null } | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      searchPlaces(q, { signal: ctrl.signal }).then((results) => {
+        if (!ctrl.signal.aborted) setState({ key: k, results });
+      });
+    }, debounceMs);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [q, k, active, debounceMs]);
+
+  if (!active) return { results: [], loading: false, failed: false, done: false };
+  const current = state && state.key === k ? state : null;
+  return { results: current?.results ?? [], loading: !current, failed: !!current && current.results === null, done: !!current };
 }
 
 /* ------------------------------------------------------------------- Hook */

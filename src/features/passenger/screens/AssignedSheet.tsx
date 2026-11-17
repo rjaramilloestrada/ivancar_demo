@@ -114,7 +114,7 @@ export function AssignedSheet() {
         <DriverCard unit={unit} />
         <p className="mt-3 text-[14px] leading-snug text-fg-65">Te recoge en {ride.pickup_label}</p>
 
-        <p className="mt-3 text-center text-[12px] text-fg-55">Conductor y unidad de demostración.</p>
+        <p className="mt-3 text-center text-[12px] text-fg-55">Confirma la placa antes de subir.</p>
       </div>
 
       <Dialog

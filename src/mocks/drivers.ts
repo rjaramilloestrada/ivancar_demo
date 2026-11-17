@@ -25,7 +25,8 @@ export const vehicles: Vehicle[] = [
   { id: 'veh-14', plate: 'GSF-1093', make: 'Hyundai', model: 'Accent', year: 2023, color: 'Amarillo', color_hex: '#F6C90E', service_id: 'taxi' },
 ];
 
-const NOW = '2026-11-16T08:00:00-05:00';
+/** Marca de actualización de la flota de demo: siempre "ahora", sin fecha fija. */
+const NOW = new Date().toISOString();
 
 function driver(
   n: number,

@@ -16,7 +16,7 @@ import {
 } from '../geo';
 import type { LatLng } from '@/types';
 
-const AIRPORT: LatLng = [-2.14884, -79.88438];
+const AIRPORT: LatLng = [-2.1574, -79.8836];
 const PLAZA_LAGOS: LatLng = [-2.09832, -79.87466];
 
 describe('haversine', () => {
@@ -26,10 +26,10 @@ describe('haversine', () => {
   it('un grado de latitud ≈ 111,2 km', () => {
     expect(haversine([0, 0], [1, 0])).toBeCloseTo(111_195, -2);
   });
-  it('aeropuerto → Plaza Lagos ≈ 5,7 km en línea recta', () => {
+  it('aeropuerto → Plaza Lagos ≈ 6,6 km en línea recta', () => {
     const d = haversine(AIRPORT, PLAZA_LAGOS);
-    expect(d).toBeGreaterThan(5_500);
-    expect(d).toBeLessThan(5_900);
+    expect(d).toBeGreaterThan(6_400);
+    expect(d).toBeLessThan(6_900);
   });
   it('es simétrica', () => {
     expect(haversine(AIRPORT, PLAZA_LAGOS)).toBeCloseTo(haversine(PLAZA_LAGOS, AIRPORT), 6);
@@ -153,7 +153,7 @@ describe('randomNearby y seededRandom', () => {
 describe('boundsOf', () => {
   it('sur-oeste y norte-este', () => {
     expect(boundsOf([AIRPORT, PLAZA_LAGOS])).toEqual([
-      [-2.14884, -79.88438],
+      [-2.1574, -79.8836],
       [-2.09832, -79.87466],
     ]);
   });

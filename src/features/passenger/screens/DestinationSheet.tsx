@@ -1,10 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import { Button, IconClose, IconMap, IconPin, IconSearch, Skeleton } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import type { AddressState } from '@/lib/geocode';
+import { haversine } from '@/lib/geo';
+import { SEARCH_MIN_CHARS, useDirectSearch, type AddressState, type DirectResult } from '@/lib/geocode';
 import { places, savedPlaces, suggestPlaces } from '@/mocks/places';
 import { useRide } from '@/store/rideStore';
 import type { LatLng, Place, PlaceCategory } from '@/types';
+import { toLatLng } from '@/types';
 import { normalize, useStepFocus } from '../hooks';
 import { IconButton, PlaceIcon, SheetTitle } from '../parts';
 import { SheetContent } from '../SheetSlots';
@@ -82,11 +84,23 @@ function SearchList() {
   useStepFocus(inputRef);
 
   const results = useMemo(() => search(q), [q]);
+  const direct = useDirectSearch(q);
+  // Resultados reales: se descartan los que ya salen del catálogo local (mismo sitio, <150 m).
+  const remote = useMemo(
+    () => direct.results.filter((r) => !results.places.some((p) => haversine([r.lat, r.lng], toLatLng(p)) < 150)),
+    [direct.results, results.places],
+  );
   const suggested = useMemo(() => suggestPlaces(new Date(), 8), []);
   const category = CATEGORIES.find((c) => c.id === cat) ?? null;
   const browsing = !q.trim();
   const list = browsing ? (category ? places.filter(category.match) : suggested) : results.places;
-  const empty = !browsing && results.places.length === 0 && results.saved.length === 0;
+  const localCount = results.places.length + results.saved.length;
+  const searching = !browsing && q.trim().length >= SEARCH_MIN_CHARS;
+  const empty = !browsing && localCount === 0 && remote.length === 0;
+  const pickFirst = () => {
+    if (results.places[0]) choose(placeSpot(results.places[0]));
+    else if (remote[0]) choose(directSpot(remote[0]));
+  };
 
   return (
     <SheetContent
@@ -108,7 +122,7 @@ function SearchList() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && results.places[0]) choose(placeSpot(results.places[0]));
+                if (e.key === 'Enter') pickFirst();
               }}
               placeholder="Aeropuerto, mall, Malecón…"
               className="h-14 w-full rounded-full border border-line-strong bg-surface-raised pl-14 pr-14 text-[16px] text-fg outline-none transition-colors placeholder:text-fg-55 focus:border-ivancar-yellow [&::-webkit-search-cancel-button]:hidden"
@@ -128,7 +142,15 @@ function SearchList() {
             )}
           </div>
           <p id="dest-count" className="sr-only" aria-live="polite">
-            {browsing ? '' : empty ? 'Sin resultados' : `${results.places.length + results.saved.length} resultados`}
+            {browsing
+              ? ''
+              : empty
+                ? direct.loading
+                  ? 'Buscando'
+                  : direct.failed
+                    ? 'No se pudo buscar'
+                    : 'Sin resultados'
+                : `${localCount + remote.length} resultados${searching && direct.loading ? ', buscando más' : ''}`}
           </p>
         </div>
       }
@@ -162,10 +184,29 @@ function SearchList() {
           <span className="grid size-14 place-items-center rounded-full bg-white/[0.06] text-ivancar-yellow">
             <IconPin size={26} />
           </span>
-          <p className="mt-4 text-[17px] font-bold">No encontramos “{q.trim()}”</p>
-          <p className="mt-1 max-w-[280px] text-[14px] text-fg-65">
-            Prueba con otro nombre, como “aeropuerto” o “Malecón”, o marca el punto en el mapa.
-          </p>
+          {searching && direct.loading ? (
+            <>
+              <p className="mt-4 text-[17px] font-bold">Buscando “{q.trim()}”…</p>
+              <Skeleton className="mt-3 h-3 w-44" />
+            </>
+          ) : searching && direct.failed ? (
+            <>
+              <p className="mt-4 text-[17px] font-bold">No pudimos buscar direcciones</p>
+              <p className="mt-1 max-w-[280px] text-[14px] text-fg-65">
+                {typeof navigator !== 'undefined' && navigator.onLine === false ? 'Sin conexión. ' : 'El buscador no respondió. '}
+                Prueba con un lugar de la lista o marca el punto en el mapa.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="mt-4 text-[17px] font-bold">No encontramos “{q.trim()}”</p>
+              <p className="mt-1 max-w-[280px] text-[14px] text-fg-65">
+                {q.trim().length < SEARCH_MIN_CHARS
+                  ? 'Escribe al menos 3 letras, o marca el punto en el mapa.'
+                  : 'Prueba con otro nombre o una calle, como “aeropuerto” o “Av. Francisco de Orellana”, o marca el punto en el mapa.'}
+              </p>
+            </>
+          )}
         </div>
       ) : (
         <div className="pb-4">
@@ -200,11 +241,39 @@ function SearchList() {
               ))}
             </ul>
           </section>
+          {!browsing && (remote.length > 0 || (searching && direct.loading)) && (
+            <section aria-labelledby="h-reales" className="mt-4">
+              <h3 id="h-reales" className="label-caps text-fg-55">
+                Direcciones y lugares
+                {direct.loading && <span className="ml-2 normal-case tracking-normal text-fg-55">· buscando…</span>}
+              </h3>
+              <ul className="mt-1" data-testid="dest-remote">
+                {remote.map((r) => (
+                  <li key={r.id}>
+                    <PlaceRow icon={<IconPin size={20} />} title={r.title} subtitle={r.subtitle} onClick={() => choose(directSpot(r))} />
+                  </li>
+                ))}
+                {remote.length === 0 && direct.loading && (
+                  <li aria-hidden className="px-1 py-2">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="mt-1.5 h-3 w-28" />
+                  </li>
+                )}
+              </ul>
+            </section>
+          )}
+          {searching && direct.failed && (
+            <p className="mt-3 text-[13px] text-fg-55" data-testid="dest-offline">
+              No pudimos buscar más direcciones ahora. Puedes marcar el punto en el mapa.
+            </p>
+          )}
         </div>
       )}
     </SheetContent>
   );
 }
+
+const directSpot = (r: DirectResult) => ({ lat: r.lat, lng: r.lng, label: r.title, sublabel: r.subtitle });
 
 function PlaceRow({ icon, title, subtitle, onClick }: { icon: React.ReactNode; title: string; subtitle: string; onClick: () => void }) {
   return (

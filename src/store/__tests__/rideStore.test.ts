@@ -14,7 +14,7 @@ import {
 } from '../rideStore';
 
 const pickup: Spot = { lat: -2.1449, lng: -79.8676, label: 'Parque Histórico' };
-const airport: Spot = { lat: -2.14884, lng: -79.88438, label: 'Aeropuerto', place_id: 'plc-aeropuerto' };
+const airport: Spot = { lat: -2.1574, lng: -79.8836, label: 'Aeropuerto', place_id: 'plc-aeropuerto' };
 const route = estimateRoute([pickup.lat, pickup.lng], [airport.lat, airport.lng]);
 const unit = fleet[0];
 const approach = estimateRoute([unit.lat, unit.lng], [pickup.lat, pickup.lng]);

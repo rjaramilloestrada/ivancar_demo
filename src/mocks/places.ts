@@ -3,6 +3,8 @@ import type { Place, PlaceCategory, SavedPlace, Sector } from '@/types';
 /**
  * Lugares frecuentes (catálogo de demo). Coordenadas aproximadas, verificadas contra
  * OpenStreetMap (Nominatim, nov-2026): cada punto cae en tierra, sobre o junto al lugar.
+ * Revisadas por nombre contra Nominatim: ninguna se desvía más de ~70 m (el aeropuerto va en
+ * la terminal de pasajeros y Urdesa sobre la Av. Víctor Emilio Estrada).
  * Las referencias de dirección son orientativas.
  */
 export const places: Place[] = [
@@ -15,8 +17,8 @@ export const places: Place[] = [
     zone: 'guayaquil',
     sector: 'Garzota',
     address_hint: 'Av. de las Américas',
-    lat: -2.14884,
-    lng: -79.88438,
+    lat: -2.1574,
+    lng: -79.8836,
     popularity: 1,
   },
   {
@@ -185,8 +187,8 @@ export const places: Place[] = [
     zone: 'guayaquil',
     sector: 'Urdesa',
     address_hint: 'Zona de restaurantes',
-    lat: -2.167,
-    lng: -79.9058,
+    lat: -2.1685,
+    lng: -79.9104,
     popularity: 0.55,
   },
   {

@@ -152,16 +152,23 @@ export default function PassengerApp() {
   }, [step, pinLL, pickupAddress?.title, pickupAddress?.subtitle, pinMoving]);
 
   // Geolocalización real si hay permiso; si no, Samborondón. Nunca bloquea ni muestra errores.
+  // `requestGeo` también la usa el botón "Usar mi ubicación" (reintento tras negar el permiso).
+  const alive = useRef(true);
   useEffect(() => {
-    if (useRide.getState().pickup && useRide.getState().step !== 'home') return;
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const requestGeo = useCallback((retry = false) => {
     if (!('geolocation' in navigator)) {
       setGeo('unavailable');
       return;
     }
-    let alive = true;
+    if (retry) setGeo('pending');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        if (!alive) return;
+        if (!alive.current) return;
         const ll: LatLng = [pos.coords.latitude, pos.coords.longitude];
         if (!inServiceArea(ll)) {
           setGeo('outside');
@@ -173,17 +180,19 @@ export default function PassengerApp() {
           return;
         }
         setGeo('granted');
-        if (userMoved.current || useRide.getState().step !== 'home') return;
+        if ((!retry && userMoved.current) || useRide.getState().step !== 'home') return;
         if (mapRef.current) mapRef.current.flyTo(ll, 16);
         else setStartView({ center: ll, zoom: 16 });
       },
-      () => alive && setGeo('denied'),
+      () => alive.current && setGeo('denied'),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
     );
-    return () => {
-      alive = false;
-    };
   }, []);
+  useEffect(() => {
+    if (useRide.getState().pickup && useRide.getState().step !== 'home') return;
+    requestGeo();
+  }, [requestGeo]);
+  const retryGeo = useCallback(() => requestGeo(true), [requestGeo]);
 
   /* ------------------------------------------------- Destino en el mapa (P2) */
   const [destLL, setDestLL] = useState<LatLng | null>(null);
@@ -291,7 +300,7 @@ export default function PassengerApp() {
           <div ref={bodyRef} />
         </BottomSheet>
 
-        {step === 'home' && <HomeSheet address={pinMoving ? null : pickupAddress} moving={pinMoving} geo={geo} />}
+        {step === 'home' && <HomeSheet address={pinMoving ? null : pickupAddress} moving={pinMoving} geo={geo} onRetryGeo={retryGeo} />}
         {step === 'destination' && <DestinationSheet destAddress={destAddress} destMoving={destMoving} destPoint={destLL} />}
         {step === 'service' && <ServiceSheet />}
         {step === 'payment' && <PaymentSheet />}
