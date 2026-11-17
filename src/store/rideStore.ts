@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
+import { travelProgress } from '@/lib/fleetSim';
 import { estimateFare } from '@/lib/pricing';
 import type { Route } from '@/lib/routing';
 import { simTimings } from '@/lib/simConfig';
@@ -617,8 +618,11 @@ function clearedRide(): Partial<RideState> {
   };
 }
 
-/** Progreso (0..1) de la fase con reloj a la hora `now`. */
+/**
+ * Avance (0..1) sobre la ruta de la fase con reloj a la hora `now`: arranca y frena suave
+ * (`travelProgress`). La central usa la misma curva para el mismo reloj.
+ */
 export function phaseProgress(s: Pick<RideState, 'phaseStartedAt' | 'phaseDurationMs'>, now = Date.now()): number {
   if (!s.phaseStartedAt || !s.phaseDurationMs) return 0;
-  return Math.min(1, Math.max(0, (now - s.phaseStartedAt) / s.phaseDurationMs));
+  return travelProgress((now - s.phaseStartedAt) / s.phaseDurationMs);
 }

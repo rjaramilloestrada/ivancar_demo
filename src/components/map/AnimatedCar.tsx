@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { useMap } from 'react-leaflet';
-import { cumulativeDistances, lerpAngle, pathLength, pointAlong } from '@/lib/geo';
+import { cumulativeDistances, lerpAngle, pathLength, pointAlong, poseOnPath } from '@/lib/geo';
 import type { LatLng } from '@/types';
 import { carSvg } from './carIcon';
 import { useMapView } from './MapView';
@@ -108,7 +108,7 @@ export function AnimatedCar({
   // Crear el marcador una vez.
   useEffect(() => {
     const st = s.current;
-    const start = pointAlong(st.path, st.p, st.cum);
+    const start = poseOnPath(st.path, st.p, st.cum);
     st.heading = start.bearing;
     const icon = L.divIcon({
       className: `iv-car iv-car--${variant}`,
@@ -146,8 +146,7 @@ export function AnimatedCar({
     st.target = st.p;
     st.arrived = false;
     st.shownP = -1; // forzar dibujo
-    const pt = pointAlong(path, st.p, st.cum);
-    st.heading = pt.bearing;
+    st.heading = poseOnPath(path, st.p, st.cum).bearing;
   }, [path]);
 
   // Progreso controlado.
@@ -182,6 +181,7 @@ export function AnimatedCar({
       if (st.path.length < 2) return;
 
       // 1) Avanzar el progreso lógico.
+      const prevP = st.p;
       if (pr.progress != null) {
         const diff = st.target - st.p;
         st.p = Math.abs(diff) < 1e-5 ? st.target : st.p + diff * (1 - Math.exp(-dt / FOLLOW_TAU_MS));
@@ -195,10 +195,14 @@ export function AnimatedCar({
         }
       }
 
-      // 2) Rumbo objetivo y giro suave.
-      const pt = pointAlong(st.path, st.p, st.cum);
+      // 2) Rumbo objetivo (sobre una ventana de metros, estable en quiebres cortos) y giro
+      //    suave. Detenido no gira: conserva el rumbo con que llegó.
       const stepMode = pr.stepped;
-      st.heading = stepMode ? pt.bearing : lerpAngle(st.heading, pt.bearing, 1 - Math.exp(-dt / TURN_TAU_MS));
+      const movedM = Math.abs(st.p - prevP) * st.length;
+      if (movedM > 0.02 || stepMode) {
+        const target = poseOnPath(st.path, st.p, st.cum).bearing;
+        st.heading = stepMode ? target : lerpAngle(st.heading, target, 1 - Math.exp(-dt / TURN_TAU_MS));
+      }
 
       // 3) Dibujar (por pasos con reduced motion).
       const atEnd = st.p >= 1 && !pr.loop;
@@ -239,7 +243,7 @@ export function AnimatedCar({
         st.p = Math.min(1, Math.max(0, p));
         st.target = st.p;
         st.arrived = false;
-        st.heading = pointAlong(st.path, st.p, st.cum).bearing;
+        st.heading = poseOnPath(st.path, st.p, st.cum).bearing;
         const marker = markerRef.current;
         if (marker) {
           marker.setLatLng(pointAlong(st.path, st.p, st.cum).point);

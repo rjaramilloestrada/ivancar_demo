@@ -30,6 +30,8 @@ export interface RouteLineProps {
   glow?: boolean;
   /** Se llama al terminar de dibujarse. */
   onDrawn?: () => void;
+  /** Clases extra para los trazos (además de `iv-route`), p. ej. el origen de la ruta. */
+  className?: string;
   ref?: Ref<RouteLineHandle>;
 }
 
@@ -48,6 +50,7 @@ export function RouteLine({
   weight = 5,
   glow = true,
   onDrawn,
+  className,
   ref,
 }: RouteLineProps) {
   const map = useMap();
@@ -100,9 +103,10 @@ export function RouteLine({
   // Capas.
   useEffect(() => {
     const common: L.PolylineOptions = { interactive: false, lineCap: 'round', lineJoin: 'round', smoothFactor: 1 };
-    const g = glow ? L.polyline([], { ...common, color, weight: weight + 9, opacity: 0.16, className: 'iv-route' }).addTo(map) : null;
-    const done = L.polyline([], { ...common, color: '#FFFFFF', weight: Math.max(3, weight - 1), opacity: 0.22, className: 'iv-route' }).addTo(map);
-    const todo = L.polyline([], { ...common, color, weight, opacity: 1, className: 'iv-route' }).addTo(map);
+    const cls = className ? `iv-route ${className}` : 'iv-route';
+    const g = glow ? L.polyline([], { ...common, color, weight: weight + 9, opacity: 0.16, className: cls }).addTo(map) : null;
+    const done = L.polyline([], { ...common, color: '#FFFFFF', weight: Math.max(3, weight - 1), opacity: 0.22, className: cls }).addTo(map);
+    const todo = L.polyline([], { ...common, color, weight, opacity: 1, className: cls }).addTo(map);
     lines.current = { glow: g, done, todo };
     render();
     return () => {
@@ -112,7 +116,7 @@ export function RouteLine({
       todo.remove();
       lines.current = null;
     };
-  }, [map, glow, color, weight]);
+  }, [map, glow, color, weight, className]);
 
   // Ruta nueva → dibujar.
   useEffect(() => {

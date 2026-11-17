@@ -1,7 +1,9 @@
 import { useEffect } from 'react';
 import { useChannel, usePresenceResponder } from '@/lib/channel';
+import { patrolPosition, setFleetPlan } from '@/lib/fleetSim';
+import { getRoute } from '@/lib/routing';
 import { simTimings } from '@/lib/simConfig';
-import { computeAlerts, dispatchEvents, useDispatch } from '@/store/dispatchStore';
+import { computeAlerts, dispatchEvents, dropoffOf, isActive, pickupOf, useDispatch, type LegKind } from '@/store/dispatchStore';
 import { publishAck, publishAssigned } from './commands';
 
 /** Cada cuánto avanza la simulación de la central (ms). No provoca renders si nada cambia. */
@@ -47,6 +49,35 @@ export function useDispatchSimulation() {
     return () => clearInterval(t);
   }, []);
 
+  // Tramos provisionales de los pedidos simulados: se pide la ruta por calles (OSRM, con
+  // caché y control de ritmo en lib/routing). Los de la app los manda el pasajero.
+  useEffect(() => {
+    const asked = new Set<string>();
+    const resolve = () => {
+      for (const o of useDispatch.getState().orders) {
+        if (o.source !== 'seed' || !isActive(o)) continue;
+        for (const kind of ['approach', 'trip'] as LegKind[]) {
+          const leg = o[kind];
+          if (!leg || leg.src !== 'pending') continue;
+          const k = `${o.id}:${kind}:${leg.started_at}`;
+          if (asked.has(k)) continue;
+          asked.add(k);
+          // Llegada: desde donde está ahora la unidad (sigue patrullando mientras tanto).
+          // (Si quedó "atascada" antes de tener ruta, desde donde se detuvo.)
+          const at = o.stalled_at != null ? Math.min(Date.now(), o.stalled_at) : Date.now();
+          const pose = kind === 'approach' && o.unit_id ? patrolPosition(o.unit_id, at, leg.path[0]) : null;
+          const from = pose ? pose.point : pickupOf(o);
+          const to = kind === 'approach' ? pickupOf(o) : dropoffOf(o);
+          void getRoute(from, to, { timeoutMs: 2500, startBearing: pose?.bearing }).then((route) => {
+            useDispatch.getState().setLegRoute(o.id, kind, leg.started_at, route);
+          });
+        }
+      }
+    };
+    resolve();
+    return useDispatch.subscribe(resolve);
+  }, []);
+
   // Pedido real nuevo: se selecciona para que el mapa lo encuadre (momento clave de la demo).
   useEffect(
     () =>
@@ -76,6 +107,9 @@ export function useDispatchSimulation() {
           break;
         case 'ride:cancelled':
           s.cancel(m.ride_id, 'passenger');
+          break;
+        case 'fleet:plan':
+          setFleetPlan(m.plan);
           break;
       }
     },

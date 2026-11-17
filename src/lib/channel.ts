@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FleetUnit, IsoDateTime, LatLng, Ride, RideStatus } from '@/types';
+import type { FleetPlan } from './fleetSim';
 
 /**
  * Canal pasajero ↔ central sobre BroadcastChannel (PLAN_EJECUCION.md, ajuste 2).
@@ -41,8 +42,9 @@ export type ChannelMessage =
       /** Inicio de la fase (ms de época) y su duración en el demo (ms). */
       phase_started_at?: number;
       phase_ms?: number;
-      /** Ruta de la fase (simplificada). */
+      /** Ruta de la fase (simplificada) y su origen. */
       path?: LatLng[];
+      path_source?: 'osrm' | 'fallback';
     }
   /**
    * Central → pasajero: "recibí tu pedido". En modo manual el pasajero espera al operador
@@ -61,6 +63,11 @@ export type ChannelMessage =
       reason?: string;
       at: IsoDateTime;
     }
+  /**
+   * Pasajero → central: plan de flota alrededor de la recogida (circuitos y fases de las
+   * unidades de zona, ver `lib/fleetSim.ts`). La central lo aplica y dibuja lo mismo.
+   */
+  | { type: 'fleet:plan'; plan: FleetPlan }
   /** Presencia: "¿hay alguien?". */
   | { type: 'presence:ping'; at: IsoDateTime }
   /** Presencia: "aquí estoy". `to` = tab que preguntó. */

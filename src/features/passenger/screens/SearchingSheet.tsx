@@ -2,13 +2,12 @@ import { useMemo } from 'react';
 import { AnimatedNumber } from '@/components/fx/AnimatedNumber';
 import { ServiceIcon } from '@/components/services/ServiceIcon';
 import { Button, Eyebrow, useToast } from '@/components/ui';
+import { visibleUnits } from '@/lib/dispatch';
 import { haversine } from '@/lib/geo';
 import { formatUSD } from '@/lib/pricing';
 import { simTimings } from '@/lib/simConfig';
-import { fleet } from '@/mocks/drivers';
 import { getService } from '@/mocks/services';
 import { rideCode, useRide } from '@/store/rideStore';
-import { toLatLng } from '@/types';
 import { useNow } from '../hooks';
 import { PAYMENT_LABEL, RouteSummary, SheetTitle } from '../parts';
 import { SheetContent } from '../SheetSlots';
@@ -28,9 +27,9 @@ export function SearchingSheet({ centralOnline }: { centralOnline: boolean }) {
   const expected = manual ? T.searchManualTimeoutMs : centralOnline ? T.searchCentralTimeoutMs : T.searchAutoMs;
   const progress = Math.min(0.95, (now - startedAt) / (expected + 600));
 
-  // Unidades disponibles a menos de 6 km: el contador sube mientras el radar barre el mapa.
+  // Unidades disponibles cerca (las que se ven en el mapa): el contador sube mientras el radar barre.
   const nearby = useMemo(
-    () => fleet.filter((u) => u.status === 'available' && haversine([ride.pickup_lat, ride.pickup_lng], toLatLng(u)) < 6000).length,
+    () => Math.max(1, visibleUnits().filter((u) => haversine([ride.pickup_lat, ride.pickup_lng], [u.lat, u.lng]) < 3000).length),
     [ride.pickup_lat, ride.pickup_lng],
   );
   const evaluated = Math.max(1, Math.min(nearby, Math.ceil(progress * nearby * 1.4)));

@@ -6,7 +6,8 @@ import type { Driver, FleetUnit, Vehicle } from '@/types';
  * sin fotos de personas reales. No representan a la flota de IVANCAR.
  *
  * Posición inicial = primer punto de su recorrido de patrulla (`fleetRoutes.ts`):
- * 5 unidades en Samborondón y La Puntilla, 6 en Guayaquil y 3 en Ceibos y Vía a la Costa.
+ * 5 unidades en Samborondón y La Puntilla, 6 en Guayaquil y 3 en Ceibos y Vía a la Costa,
+ * más 6 unidades de zona que patrullan alrededor del pasajero (`LOCAL_UNIT_IDS`).
  */
 export const vehicles: Vehicle[] = [
   { id: 'veh-01', plate: 'GSB-4821', make: 'Hyundai', model: 'Accent', year: 2022, color: 'Amarillo', color_hex: '#F6C90E', service_id: 'taxi' },
@@ -23,6 +24,13 @@ export const vehicles: Vehicle[] = [
   { id: 'veh-12', plate: 'GSG-3471', make: 'Toyota', model: 'Hilux', year: 2022, color: 'Gris plata', color_hex: '#A7ABB2', service_id: 'camioneta' },
   { id: 'veh-13', plate: 'GSE-5528', make: 'Kia', model: 'Cerato', year: 2024, color: 'Negro', color_hex: '#1B1B1D', service_id: 'ejecutivo' },
   { id: 'veh-14', plate: 'GSF-1093', make: 'Hyundai', model: 'Accent', year: 2023, color: 'Amarillo', color_hex: '#F6C90E', service_id: 'taxi' },
+  // Unidades de zona (ver LOCAL_UNIT_IDS).
+  { id: 'veh-15', plate: 'GSB-2964', make: 'Kia', model: 'Rio', year: 2024, color: 'Amarillo', color_hex: '#F6C90E', service_id: 'taxi' },
+  { id: 'veh-16', plate: 'GSC-7381', make: 'Hyundai', model: 'Accent', year: 2023, color: 'Amarillo', color_hex: '#F6C90E', service_id: 'taxi' },
+  { id: 'veh-17', plate: 'GSE-4410', make: 'Chevrolet', model: 'Sail', year: 2023, color: 'Amarillo', color_hex: '#F6C90E', service_id: 'taxi' },
+  { id: 'veh-18', plate: 'GSA-8853', make: 'Toyota', model: 'Corolla', year: 2024, color: 'Gris oscuro', color_hex: '#4A4D52', service_id: 'ejecutivo' },
+  { id: 'veh-19', plate: 'GSD-3067', make: 'Chevrolet', model: 'Tracker', year: 2023, color: 'Blanco', color_hex: '#EDEDED', service_id: 'suv' },
+  { id: 'veh-20', plate: 'GSG-5712', make: 'Nissan', model: 'Frontier', year: 2022, color: 'Gris plata', color_hex: '#A7ABB2', service_id: 'camioneta' },
 ];
 
 /** Marca de actualización de la flota de demo: siempre "ahora", sin fecha fija. */
@@ -77,7 +85,33 @@ export const drivers: Driver[] = [
   driver(12, 'Marco Sánchez', 'Marco S.', 4.8, 1990, -2.1762, -79.94325, 215),
   driver(13, 'Ricardo Chávez', 'Ricardo C.', 4.95, 3370, -2.19066, -79.96774, 352),
   driver(14, 'José Torres', 'José T.', 4.7, 1150, -2.18707, -80.01741, 259, 'busy'),
+  // Unidades de zona: patrullan cerca del pasajero (posición inicial = la de su circuito por defecto).
+  driver(15, 'Kléber Ortiz', 'Kléber O.', 4.85, 2210, -2.14889, -79.86945, 0),
+  driver(16, 'Édison Paredes', 'Édison P.', 4.9, 3015, -2.14174, -79.86606, 0),
+  driver(17, 'Byron Salazar', 'Byron S.', 4.75, 1330, -2.15464, -79.89255, 0),
+  driver(18, 'Wilson Arteaga', 'Wilson A.', 4.95, 2870, -2.16696, -79.90578, 0),
+  driver(19, 'Galo Intriago', 'Galo I.', 4.8, 1645, -2.14025, -79.86394, 0),
+  driver(20, 'Hugo Murillo', 'Hugo M.', 4.7, 990, -2.13653, -79.8976, 0),
 ];
+
+/**
+ * Unidades de zona: las que el pasajero ve moverse a su alrededor. Al fijar la recogida,
+ * `lib/localFleet.ts` les arma circuitos por calles cerca de ese punto (`lib/fleetSim.ts`
+ * los comparte con la central). La central no las usa para sus pedidos simulados, así lo
+ * que ve el pasajero y lo que ve la central coincide. Mezcla de tipos: cualquier servicio
+ * tiene una unidad compatible cerca.
+ */
+export const LOCAL_UNIT_IDS: readonly string[] = ['drv-15', 'drv-16', 'drv-17', 'drv-18', 'drv-19', 'drv-20'];
+
+/** Circuito por defecto de cada unidad de zona (prestado de otra unidad) y su desfase. */
+export const LOCAL_DEFAULT_CIRCUIT: Record<string, { route: string; phase: number }> = {
+  'drv-15': { route: 'drv-02', phase: 0.5 },
+  'drv-16': { route: 'drv-01', phase: 0.5 },
+  'drv-17': { route: 'drv-08', phase: 0.5 },
+  'drv-18': { route: 'drv-07', phase: 0.5 },
+  'drv-19': { route: 'drv-04', phase: 0.5 },
+  'drv-20': { route: 'drv-10', phase: 0.5 },
+};
 
 export const vehiclesById: Record<string, Vehicle> = Object.fromEntries(vehicles.map((v) => [v.id, v]));
 

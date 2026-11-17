@@ -113,6 +113,14 @@ async function pair(browser, { reduced = false, sim = 2, centralSize = [1440, 90
   await central.setViewportSize({ width: centralSize[0], height: centralSize[1] });
   const passenger = await ctx.newPage();
   await passenger.setViewportSize({ width: 390, height: 844 });
+  // Registro de lo que anuncia la región aria-live de la central.
+  await central.addInitScript(() => {
+    window.__lives = [];
+    new MutationObserver(() => {
+      const t = document.querySelector('[data-testid=central-live]')?.textContent?.trim();
+      if (t && window.__lives.at(-1) !== t) window.__lives.push(t);
+    }).observe(document, { subtree: true, childList: true, characterData: true });
+  });
   await central.goto(`${BASE}#/central?sim=${sim}`);
   await central.waitForSelector('[data-testid=central]');
   await central.waitForSelector('[data-order-card]', { timeout: 8000 });
@@ -125,6 +133,8 @@ const stepIs = (page, step, timeout = 20_000) => page.waitForSelector(`main[data
 async function waitHome(page) {
   await stepIs(page, 'home');
   await page.waitForSelector('[data-testid=pickup-label]', { timeout: 15_000 });
+  // Flota de zona armada alrededor de la recogida (como una persona que mira el mapa un momento).
+  await page.waitForFunction(() => !!sessionStorage.getItem('ivancar-fleet'), null, { timeout: 8000 }).catch(() => {});
   await sleep(500);
 }
 
@@ -218,7 +228,9 @@ const SCENARIOS = {
     check(`[${tag}] la central lo selecciona y lo encuadra`, detailId === id);
     await sleep(300);
     await shot(central, `central-${tag}-1-pedido-entra`);
-    const live = await central.textContent('[data-testid=central-live]');
+    // Todo lo anunciado desde que abrió (otra alerta puede llegar justo después y reemplazarlo).
+    const lives = await central.evaluate(() => window.__lives ?? []);
+    const live = lives.find((t) => /Pedido nuevo desde la app/.test(t)) ?? lives.at(-1);
     check(`[${tag}] anuncio aria-live del pedido nuevo`, /Pedido nuevo desde la app/.test(live ?? ''), live ?? '');
 
     await stepIs(passenger, 'assigned', 10_000);
@@ -228,6 +240,10 @@ const SCENARIOS = {
     const cPlate = (await cardPlate(central, id))?.trim();
     check(`[${tag}] el pasajero ve la misma placa que la central`, !!pPlate && pPlate === cPlate, `${pPlate} = ${cPlate}`);
     check(`[${tag}] pasa a "en camino" en la central`, await waitStatus(central, id, 'en_route', 4000));
+    // Mismo plan de flota (mismas posiciones) en los dos lados.
+    const planP = await passenger.evaluate(() => JSON.parse(sessionStorage.getItem('ivancar-fleet') ?? 'null')?.id ?? null);
+    const planC = await central.evaluate(() => JSON.parse(sessionStorage.getItem('ivancar-fleet') ?? 'null')?.id ?? null);
+    check(`[${tag}] pasajero y central usan el mismo plan de flota`, !!planP && planP === planC, `${planP} = ${planC}`);
     await sleep(600);
     await shot(central, `central-${tag}-2-asignado`);
     await shot(passenger, `pasajero-${tag}-asignado`);
@@ -264,17 +280,32 @@ const SCENARIOS = {
 
     // Estados hasta finalizado.
     const seen = new Set();
-    const tEnd = Date.now() + 40_000;
+    const tEnd = Date.now() + 70_000;
+    let curves = null;
     while (Date.now() < tEnd) {
       const st = await cardStatus(central, id);
       if (st) seen.add(st);
       if (st === 'in_trip' && !seen.has('_shot')) {
         seen.add('_shot');
+        await sleep(1500);
+        // Con red, la central dibuja rutas por calles: ninguna curva de respaldo.
+        curves = await central.evaluate(() => ({
+          fallback: document.querySelectorAll('.iv-leg--fallback, .iv-preview--fallback').length,
+          streets: document.querySelectorAll('.iv-leg--osrm').length,
+          storeFallback: JSON.parse(sessionStorage.getItem('ivancar-dispatch')).state.orders.filter(
+            (o) => ['assigned', 'en_route', 'in_trip'].includes(o.status) && [o.approach, o.trip].some((l) => l && l.src === 'fallback'),
+          ).length,
+        }));
         await shot(central, `central-${tag}-4-en-viaje`);
       }
       if (st === 'completed') break;
       await sleep(200);
     }
+    check(
+      `[${tag}] la central no dibuja curvas de respaldo con red (solo rutas por calles)`,
+      !!curves && curves.fallback === 0 && curves.storeFallback === 0 && curves.streets >= 1,
+      JSON.stringify(curves),
+    );
     check(`[${tag}] estados en la central: llegó → en viaje → finalizado`, ['arrived', 'in_trip', 'completed'].every((s) => seen.has(s)), [...seen].filter((s) => !s.startsWith('_')).join(' → '));
     await stepIs(passenger, 'rating', 10_000);
     check(`[${tag}] el pasajero termina en la calificación`, true);
@@ -485,7 +516,7 @@ const SCENARIOS = {
     await sleep(500);
     check(`[${tag}] misma placa`, (await passengerPlate(passenger)) === (await cardPlate(central, id))?.trim());
     await shot(central, `central-${tag}`);
-    check(`[${tag}] llega a finalizado`, await waitStatus(central, id, 'completed', 30_000));
+    check(`[${tag}] llega a finalizado`, await waitStatus(central, id, 'completed', 45_000));
     done();
     await ctx.close();
   },

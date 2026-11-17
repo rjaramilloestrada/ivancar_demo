@@ -82,20 +82,21 @@ export function HomeSheet({
                 <Skeleton className="mt-1 h-4 w-40" />
               )}
               {(geo === 'denied' || geo === 'unavailable') && (
-                <span className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-fg-55" data-testid="geo-approx">
+                <span className="mt-0.5 flex min-h-6 items-center gap-1 text-[12px] text-fg-55" data-testid="geo-approx">
                   <IconInfo size={12} className="shrink-0 text-ivancar-yellow" />
-                  Ubicación aproximada · mueve el mapa
+                  <span className="truncate">Ubicación aproximada ·{onRetryGeo ? '' : ' mueve el mapa'}</span>
+                  {onRetryGeo && (
+                    // En la misma línea: no empuja los destinos sugeridos hacia abajo.
+                    <button
+                      type="button"
+                      onClick={onRetryGeo}
+                      className="-my-1 inline-flex min-h-6 shrink-0 items-center px-0.5 font-semibold text-ivancar-yellow underline-offset-2 hover:underline"
+                      data-testid="retry-geo"
+                    >
+                      Usar mi ubicación
+                    </button>
+                  )}
                 </span>
-              )}
-              {(geo === 'denied' || geo === 'unavailable') && onRetryGeo && (
-                <button
-                  type="button"
-                  onClick={onRetryGeo}
-                  className="mt-1 inline-flex min-h-8 items-center text-[13px] font-semibold text-ivancar-yellow underline-offset-2 hover:underline"
-                  data-testid="retry-geo"
-                >
-                  Usar mi ubicación
-                </button>
               )}
             </span>
           </div>

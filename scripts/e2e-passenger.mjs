@@ -12,8 +12,9 @@
  *   --only=a,b      Escenarios a correr (default: todos). Ver SCENARIOS abajo.
  *
  * Falla (exit 1) ante cualquier error o warning de consola, error de página o respuesta
- * propia (localhost) ≥ 400. Cuenta toques hasta pedir (≤ 3) y mide P1 → P8 (< 60 s) con
- * los tiempos reales de la simulación. Los demás escenarios usan `?sim=N` para acelerar.
+ * propia (localhost) ≥ 400. Cuenta toques hasta pedir (≤ 3) y mide P1 → P8 (< 100 s: llegada
+ * ~30 s y viaje ~45 s) con los tiempos reales de la simulación, leyendo el ETA cada segundo
+ * (baja sin saltos). Los demás escenarios usan `?sim=N` para acelerar.
  * Requiere Playwright con Chromium (local o global: `npm i -g playwright`).
  */
 import { spawn, execSync } from 'node:child_process';
@@ -165,6 +166,47 @@ async function hrefOf(page, testId) {
   return page.getAttribute(`[data-testid=${testId}]`, 'href');
 }
 
+/** Lee el ETA (minutos) cada segundo hasta que `until()` sea verdadero. */
+async function sampleEta(page, testId, until, maxMs) {
+  const out = [];
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    if (await until()) break;
+    const t = await page.textContent(`[data-testid=${testId}]`, { timeout: 500 }).catch(() => null);
+    if (t) out.push(parseInt(t, 10));
+    await sleep(1000);
+  }
+  return out.filter((n) => Number.isFinite(n));
+}
+const etaSmooth = (xs) => xs.every((x, i) => i === 0 || (x <= xs[i - 1] && xs[i - 1] - x <= 1));
+
+/**
+ * Autos de flota dentro del área útil del mapa (entre la barra superior y el sheet), con su
+ * id de unidad, y el plan de flota vigente.
+ */
+async function fleetInView(page) {
+  return page.evaluate(() => {
+    const sheet = document.querySelector('section[aria-label="Pedido de taxi"]');
+    const bottom = sheet ? sheet.getBoundingClientRect().top : innerHeight;
+    const ids = [];
+    for (const el of document.querySelectorAll('.iv-car--fleet[data-unit-id]')) {
+      const r = el.getBoundingClientRect();
+      const x = r.left + r.width / 2;
+      const y = r.top + r.height / 2;
+      if (x > 0 && x < innerWidth && y > 112 && y < bottom) ids.push(el.getAttribute('data-unit-id'));
+    }
+    const plan = JSON.parse(sessionStorage.getItem('ivancar-fleet') ?? 'null');
+    return { ids, source: plan?.source ?? null, center: plan?.center ?? null };
+  });
+}
+
+/** Distancia en metros (haversine) entre [lat, lng]. */
+function meters(a, b) {
+  const R = 6371008.8, r = Math.PI / 180;
+  const s = Math.sin(((b[0] - a[0]) * r) / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(((b[1] - a[1]) * r) / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
 /** Pide un taxi con el camino mínimo (destino sugerido → Pedir). Devuelve los toques. */
 async function orderFast(page) {
   let taps = 0;
@@ -243,9 +285,10 @@ const SCENARIOS = {
     check(`[${tag}] Chat abre el chat con el conductor`, await page.locator('dialog[open][data-testid=chat]').isVisible());
     await shot(page, `${tag}-p6-chat`);
     await page.keyboard.press('Escape');
-    await sleep(2500);
-    const eta2 = await page.textContent('[data-testid=eta]').catch(() => null);
-    check(`[${tag}] ETA en vivo baja`, eta2 == null || parseInt(eta2) < parseInt(eta1) || parseInt(eta2) <= parseInt(eta1), `${eta1} → ${eta2 ?? 'llegando'}`);
+    // ETA leído cada segundo hasta la llegada: nunca sube y no salta más de 1 min por lectura.
+    const etas = await sampleEta(page, 'eta', () => page.getByText('Tu IVANCAR llegó').count().then((n) => n > 0), 40_000);
+    check(`[${tag}] ETA de llegada baja de forma continua (≤ 1 min por lectura, nunca sube)`, etaSmooth(etas), etas.join(' → '));
+    check(`[${tag}] ETA en vivo baja`, etas.length >= 2 && etas[etas.length - 1] < etas[0], `${eta1} → ${etas[etas.length - 1] ?? 'llegando'}`);
 
     await page.waitForSelector('text=Tu IVANCAR llegó', { timeout: 15_000 });
     check(`[${tag}] aviso "Tu IVANCAR llegó"`, true);
@@ -279,9 +322,11 @@ const SCENARIOS = {
       check(`[${tag}] Recentrar reanuda la cámara (el botón se oculta)`, !(await rc.isVisible()));
     }
 
-    await stepIs(page, 'rating', 25_000);
+    const tripEtas = await sampleEta(page, 'trip-eta', () => page.getAttribute('main', 'data-step').then((s) => s !== 'inTrip'), 60_000);
+    check(`[${tag}] ETA del viaje baja de forma continua (≤ 1 min por lectura, nunca sube)`, etaSmooth(tripEtas) && tripEtas.length >= 5, tripEtas.join(' → '));
+    await stepIs(page, 'rating', 60_000);
     const totalS = (Date.now() - t0) / 1000;
-    check(`[${tag}] P1 → P8 en menos de 60 s`, totalS < 60, `${totalS.toFixed(1)} s`);
+    check(`[${tag}] P1 → P8 en menos de 100 s (llegada ~30 s, viaje ~45 s)`, totalS < 100, `${totalS.toFixed(1)} s`);
     await sleep(500);
     await shot(page, `${tag}-p8-calificacion`);
     check(`[${tag}] resumen con tarifa referencial`, (await page.textContent('[data-testid=trip-summary]'))?.includes('Tarifa referencial de demo'));
@@ -455,7 +500,7 @@ const SCENARIOS = {
     await shot(page, `${tag}-p3`);
     await page.locator('[data-testid=cta-request]').click();
     await stepIs(page, 'assigned', 10_000);
-    await stepIs(page, 'rating', 20_000);
+    await stepIs(page, 'rating', 30_000);
     check(`[${tag}] el pedido termina igual`, true);
     done();
     await ctx.close();
@@ -472,10 +517,10 @@ const SCENARIOS = {
     await stepIs(page, 'assigned', 10_000);
     await sleep(800);
     await shot(page, `${tag}-p6`);
-    await stepIs(page, 'inTrip', 15_000);
+    await stepIs(page, 'inTrip', 25_000);
     await sleep(800);
     await shot(page, `${tag}-p7`);
-    await stepIs(page, 'rating', 15_000);
+    await stepIs(page, 'rating', 25_000);
     check(`[${tag}] flujo completo con reduce`, true, `${((Date.now() - t0) / 1000).toFixed(1)} s con sim=3`);
     done();
     await ctx.close();
@@ -488,7 +533,7 @@ const SCENARIOS = {
     await page.goto(BASE + '#/?sim=2');
     await waitHome(page);
     await orderFast(page);
-    await stepIs(page, 'inTrip', 20_000);
+    await stepIs(page, 'inTrip', 30_000);
     await sleep(1500);
     const before = await page.textContent('[data-testid=plate]');
     await page.reload();
@@ -497,7 +542,7 @@ const SCENARIOS = {
     const after = await page.textContent('[data-testid=plate]');
     check(`[${tag}] retoma el viaje con la misma unidad`, before === after, `${before}`);
     await shot(page, `${tag}-p7-tras-recargar`);
-    await stepIs(page, 'rating', 15_000);
+    await stepIs(page, 'rating', 30_000);
     check(`[${tag}] y lo termina`, true);
     done();
     await ctx.close();
@@ -541,7 +586,7 @@ const SCENARIOS = {
     const plate = await page.textContent('[data-testid=plate]');
     check(`[${tag}] reasignación cambia la unidad con aviso`, plate === 'GSD-1736', plate ?? '');
     await shot(page, `${tag}-p6-reasignada`);
-    await stepIs(page, 'rating', 25_000);
+    await stepIs(page, 'rating', 50_000);
     check(`[${tag}] termina el viaje`, true);
     done();
     await ctx.close();
@@ -596,7 +641,7 @@ const SCENARIOS = {
     await shot(page, `${tag}-p3-repetir`);
     // Pedir el repetido y comprobar que entra a "Tus viajes".
     await page.locator('[data-testid=cta-request]').click();
-    await stepIs(page, 'rating', 25_000);
+    await stepIs(page, 'rating', 40_000);
     await page.locator('[data-testid=finish]').click();
     await stepIs(page, 'home');
     await page.locator('[data-testid=open-history]').click();
@@ -645,7 +690,7 @@ const SCENARIOS = {
     await sleep(300);
     check(`[${tag}] Escape cierra el chat`, (await page.locator('dialog[open][data-testid=chat]').count()) === 0);
     // Al llegar, "Ya estoy afuera" con el chat cerrado → no leídos.
-    await page.waitForSelector('[data-testid=chat-unread]', { timeout: 20_000 });
+    await page.waitForSelector('[data-testid=chat-unread]', { timeout: 40_000 });
     check(`[${tag}] "estoy afuera" al llegar suma no leídos`, (await page.textContent('[data-testid=chat-unread]')) === '1');
     await page.locator('[data-testid=chat-driver]').click();
     await sleep(400);
@@ -653,11 +698,61 @@ const SCENARIOS = {
     check(`[${tag}] mensaje "Ya estoy afuera" con placa`, /Ya estoy afuera/.test(last ?? '') && /GS[A-Z]-\d{4}/.test(last ?? ''), last ?? '');
     await shot(page, `${tag}-p6-afuera`);
     await page.keyboard.press('Escape');
-    await stepIs(page, 'rating', 40_000);
+    await stepIs(page, 'rating', 70_000);
     const left = await page.evaluate(() => JSON.parse(sessionStorage.getItem('ivancar-chat') ?? '{"state":{"messages":[]}}').state.messages.length);
     check(`[${tag}] el historial del chat se limpia al terminar el viaje`, left === 0, `${left} mensajes`);
     done();
     await ctx.close();
+  },
+
+  /**
+   * Flota cerca del pasajero en tres zonas (Urdesa, Samborondón, Vía a la Costa): ≥ 3 autos
+   * disponibles en pantalla, por calles (plan OSRM), y el asignado es uno de los que se veían
+   * y arranca desde donde estaba.
+   */
+  async fleet(browser) {
+    const zones = [
+      ['urdesa', 'Urdesa', -2.1685, -79.9104],
+      ['samborondon', 'Samborondón', -2.1449, -79.8676],
+      ['via-costa', 'Vía a la Costa', -2.1885, -79.979],
+    ];
+    for (const [slug, label, latitude, longitude] of zones) {
+      const tag = `flota-${slug}`;
+      const { ctx, page } = await newPage(browser, { geo: { latitude, longitude }, permissions: ['geolocation'] });
+      const done = watch(page, tag);
+      await page.goto(BASE + '#/?sim=3');
+      await waitHome(page);
+      await page.waitForFunction(() => JSON.parse(sessionStorage.getItem('ivancar-fleet') ?? 'null')?.center, null, { timeout: 10_000 }).catch(() => {});
+      await sleep(1200);
+      const home = await fleetInView(page);
+      check(`[${tag}] ≥ 3 autos disponibles a la vista cerca del pasajero (${label})`, home.ids.length >= 3, `${home.ids.length} a la vista · plan ${home.source}`);
+      check(`[${tag}] circuitos por calles (OSRM)`, home.source === 'osrm', String(home.source));
+      check(`[${tag}] plan armado para esta recogida`, !!home.center && meters(home.center, [latitude, longitude]) < 1200, home.center ? `${Math.round(meters(home.center, [latitude, longitude]))} m` : 'sin plan');
+      await shot(page, `${tag}-inicio`);
+      // Pedir y seguir qué autos se ven hasta el instante de la asignación.
+      await orderFast(page);
+      let seen = [];
+      let polls = 0;
+      const tEnd = Date.now() + 12_000;
+      while (Date.now() < tEnd) {
+        if ((await page.getAttribute('main', 'data-step')) === 'assigned') break;
+        const now = (await fleetInView(page)).ids;
+        polls++;
+        if (now.length) seen = now;
+        await sleep(100);
+      }
+      await stepIs(page, 'assigned', 2000);
+      const st = await page.evaluate(() => JSON.parse(sessionStorage.getItem('ivancar-ride')).state);
+      const start = st.approach.path[0];
+      check(`[${tag}] la unidad asignada estaba a la vista al asignar`, seen.includes(st.unit.id), `${st.unit.id} en [${seen.join(", ")}] · ${polls} lecturas`);
+      const gap = meters([st.unit.lat, st.unit.lng], start);
+      check(`[${tag}] la llegada arranca donde estaba la unidad (≤ 25 m)`, gap <= 25, `${gap.toFixed(1)} m`);
+      check(`[${tag}] ruta de llegada por calles`, st.approach.source === 'osrm', st.approach.source);
+      await sleep(600);
+      await shot(page, `${tag}-asignada`);
+      done();
+      await ctx.close();
+    }
   },
 
   /** Capturas en otros tamaños de teléfono. */
@@ -692,10 +787,10 @@ const SCENARIOS = {
         return ['call-driver', 'chat-driver', 'cancel-ride'].map((id) => document.querySelector(`[data-testid=${id}]`)?.getBoundingClientRect().bottom ?? 1e9).map((b) => [Math.round(b), Math.round(foot)]);
       });
       check(`[${tag}] Llamar / Chat / Cancelar visibles y tocables sin arrastrar`, acts.every(([b, f]) => b <= f), JSON.stringify(acts));
-      await stepIs(page, 'inTrip', 15_000);
+      await stepIs(page, 'inTrip', 25_000);
       await sleep(1500); // deja terminar el encuadre del mapa
       await shot(page, `${tag}-p7`);
-      await stepIs(page, 'rating', 15_000);
+      await stepIs(page, 'rating', 25_000);
       await sleep(500);
       await shot(page, `${tag}-p8`);
       done();

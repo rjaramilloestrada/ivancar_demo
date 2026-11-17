@@ -1,13 +1,13 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
-import { approachStart, COMPATIBLE, estimatePickupMinutes } from '@/lib/dispatch';
-import { patrolPosition, poseAlong, type FleetPose } from '@/lib/fleetSim';
+import { COMPATIBLE, estimatePickupMinutes } from '@/lib/dispatch';
+import { patrolPosition, poseAlong, travelProgress, type FleetPose } from '@/lib/fleetSim';
 import { haversine } from '@/lib/geo';
 import { estimateFare } from '@/lib/pricing';
-import { estimateRoute } from '@/lib/routing';
+import { estimateRoute, type Route } from '@/lib/routing';
 import { simTimings, type SimTimings } from '@/lib/simConfig';
 import { seedPayments, seedServices, seedTrips, type SeedTrip } from '@/mocks/dispatchSeeds';
-import { fleet, fleetById } from '@/mocks/drivers';
+import { fleet, fleetById, LOCAL_UNIT_IDS } from '@/mocks/drivers';
 import { servicesById } from '@/mocks/services';
 import type { FleetUnit, LatLng, Ride, RideStatus, ServiceId } from '@/types';
 
@@ -40,7 +40,15 @@ export interface OrderLeg {
   duration_ms: number;
   /** Duración creíble que se muestra (s). El demo comprime el tiempo. */
   duration_s: number;
+  /**
+   * Origen del trazado: 'osrm' (por calles), 'fallback' (estimado: OSRM no respondió) o
+   * 'pending' (trazado provisional mientras se pide la ruta: no se dibuja y la unidad no
+   * arranca hasta tenerla). Sin el campo (datos viejos) se trata como 'osrm'.
+   */
+  src?: 'osrm' | 'fallback' | 'pending';
 }
+
+export type LegKind = 'approach' | 'trip';
 
 export interface TimelineEntry {
   status: RideStatus | 'reassigned';
@@ -117,6 +125,11 @@ export interface DispatchActions {
   cancel(orderId: string, by: 'passenger' | 'central', now?: number): boolean;
   /** Avanza la simulación hasta `now`. */
   tick(now?: number): TickResult;
+  /**
+   * Ruta pedida para un tramo provisional (`src: 'pending'`). `startedAt` identifica el
+   * tramo (si cambió, se ignora). El reloj del tramo empieza ahora.
+   */
+  setLegRoute(orderId: string, kind: LegKind, startedAt: number, route: Route, now?: number): boolean;
   selectOrder(id: string | null): void;
   selectUnit(id: string | null): void;
   setFilter(f: OrderFilter): void;
@@ -131,6 +144,8 @@ export interface AppStatus {
   phase_started_at?: number;
   phase_ms?: number;
   path?: LatLng[];
+  /** Origen de `path` (por calles o estimado). */
+  path_source?: 'osrm' | 'fallback';
   eta_s?: number;
 }
 
@@ -200,10 +215,14 @@ export function orderCode(id: string): string {
 export const pickupOf = (o: DispatchOrder): LatLng => [o.ride.pickup_lat, o.ride.pickup_lng];
 export const dropoffOf = (o: DispatchOrder): LatLng => [o.ride.dropoff_lat, o.ride.dropoff_lng];
 
+/** Avance (0..1) sobre el tramo a la hora `now`, con arranque y frenado suaves (como el pasajero). */
 export function legProgress(leg: OrderLeg | null, now: number): number {
-  if (!leg) return 0;
-  return Math.min(1, Math.max(0, (now - leg.started_at) / Math.max(1, leg.duration_ms)));
+  if (!leg || leg.src === 'pending') return 0;
+  return travelProgress((now - leg.started_at) / Math.max(1, leg.duration_ms));
 }
+
+/** Unidades que la central no usa para pedidos simulados (las que ve el pasajero). */
+export const seedExclude = (o: Pick<DispatchOrder, 'source'>): string[] => (o.source === 'seed' ? [...LOCAL_UNIT_IDS] : []);
 
 /** Progreso de la llegada de la unidad (congelado si está "atascada"). */
 export function approachProgress(o: DispatchOrder, now: number): number {
@@ -244,8 +263,13 @@ export function unitViews(orders: readonly DispatchOrder[]): UnitView[] {
 export function unitPose(unitId: string, order: DispatchOrder | null, now: number): FleetPose & { mode: 'patrol' | 'approach' | 'waiting' | 'trip' } {
   const base = fleetById[unitId];
   if (order && order.unit_id === unitId) {
+    // Tramo provisional (ruta en camino): la unidad sigue su patrulla hasta tenerla.
     if ((order.status === 'assigned' || order.status === 'en_route') && order.approach) {
-      return { ...poseAlong(order.approach.path, approachProgress(order, now)), mode: 'approach' };
+      if (order.approach.src !== 'pending') return { ...poseAlong(order.approach.path, approachProgress(order, now)), mode: 'approach' };
+      // "Atascada" antes de tener ruta: queda donde estaba al detenerse.
+      if (order.stalled_at != null && now >= order.stalled_at) {
+        return { ...patrolPosition(unitId, order.stalled_at, base ? [base.lat, base.lng] : undefined), mode: 'approach' };
+      }
     }
     if (order.status === 'arrived') {
       const end = order.approach ? poseAlong(order.approach.path, 1) : { point: pickupOf(order), bearing: 0 };
@@ -440,10 +464,13 @@ function newOrder(ride: Ride, source: OrderSource, receivedAt: number): Dispatch
   };
 }
 
-/** Tramo de llegada estimado (sin red) desde la posición actual de la unidad. */
+/**
+ * Tramo de llegada provisional desde la posición actual de la unidad: la capa de efectos
+ * pide la ruta por calles (`setLegRoute`); si OSRM no responde, queda la estimada.
+ */
 function approachLeg(unit: FleetUnit, pickup: LatLng, startedAt: number, durationMs: number): OrderLeg {
-  const r = estimateRoute(approachStart(unit, pickup), pickup);
-  return { path: r.path, started_at: startedAt, duration_ms: durationMs, duration_s: r.duration_s };
+  const r = estimateRoute([unit.lat, unit.lng], pickup);
+  return { path: r.path, started_at: startedAt, duration_ms: durationMs, duration_s: r.duration_s, src: 'pending' };
 }
 
 /* ------------------------------------------------------------------ Store */
@@ -539,8 +566,10 @@ export const useDispatch = create<DispatchStore>()(
 
       const tripLeg = (o: DispatchOrder, now: number): OrderLeg => {
         const trip = seedTrips.find((t) => t.pickup.lat === o.ride.pickup_lat && t.dropoff.lat === o.ride.dropoff_lat && t.pickup.lng === o.ride.pickup_lng);
-        const path = trip?.path ?? estimateRoute(pickupOf(o), dropoffOf(o)).path;
-        return { path, started_at: now, duration_ms: Math.round(T().tripMs * SEED_TRIP_FACTOR), duration_s: o.ride.duration_s };
+        const duration_ms = Math.round(T().tripMs * SEED_TRIP_FACTOR);
+        // Los recorridos sembrados ya son rutas por calles; si no hay, se pide la ruta.
+        if (trip) return { path: trip.path, started_at: now, duration_ms, duration_s: o.ride.duration_s, src: 'osrm' };
+        return { path: estimateRoute(pickupOf(o), dropoffOf(o)).path, started_at: now, duration_ms, duration_s: o.ride.duration_s, src: 'pending' };
       };
 
       return {
@@ -552,7 +581,7 @@ export const useDispatch = create<DispatchStore>()(
           let orders: DispatchOrder[] = [];
           const add = (o: DispatchOrder) => (orders = [o, ...orders]);
           const assignSeed = (o: DispatchOrder, at: number) => {
-            const best = bestUnit(o, orders, at);
+            const best = bestUnit(o, orders, at, seedExclude(o));
             if (!best) return o;
             const { next } = doAssign(orders, o, best.unit.id, 'auto', at);
             return next;
@@ -669,11 +698,11 @@ export const useDispatch = create<DispatchStore>()(
           const order = find(orderId);
           if (!order) return null;
           if (order.status === 'requested') {
-            const best = bestUnit(order, s.orders, now);
+            const best = bestUnit(order, s.orders, now, seedExclude(order));
             return best ? s.assign(orderId, best.unit.id, 'manual', now) : null;
           }
           if (REASSIGNABLE.includes(order.status)) {
-            const best = bestUnit(order, s.orders, now, order.unit_id ? [order.unit_id] : []);
+            const best = bestUnit(order, s.orders, now, [...(order.unit_id ? [order.unit_id] : []), ...seedExclude(order)]);
             return best ? s.reassign(orderId, best.unit.id, now) : null;
           }
           return null;
@@ -713,7 +742,7 @@ export const useDispatch = create<DispatchStore>()(
           const unitId = msg.driver_id && fleetById[msg.driver_id] ? msg.driver_id : order.unit_id;
           const leg: OrderLeg | null =
             msg.path && msg.path.length >= 2 && msg.phase_started_at && msg.phase_ms
-              ? { path: msg.path, started_at: msg.phase_started_at, duration_ms: msg.phase_ms, duration_s: msg.eta_s ?? order.ride.duration_s }
+              ? { path: msg.path, started_at: msg.phase_started_at, duration_ms: msg.phase_ms, duration_s: msg.eta_s ?? order.ride.duration_s, src: msg.path_source ?? 'osrm' }
               : null;
           const next: DispatchOrder = { ...order, unit_id: unitId, ride: { ...order.ride, status: msg.status, driver_id: unitId } };
           if (msg.status === 'en_route') {
@@ -726,7 +755,7 @@ export const useDispatch = create<DispatchStore>()(
               next.assigned_via = next.assigned_via ?? 'app';
             }
           } else if (msg.status === 'in_trip') {
-            next.trip = leg ?? { path: estimateRoute(pickupOf(order), dropoffOf(order)).path, started_at: now, duration_ms: T().tripMs, duration_s: order.ride.duration_s };
+            next.trip = leg ?? { path: estimateRoute(pickupOf(order), dropoffOf(order)).path, started_at: now, duration_ms: T().tripMs, duration_s: order.ride.duration_s, src: 'pending' };
           } else if (msg.status === 'completed') {
             next.ride = { ...next.ride, completed_at: new Date(now).toISOString(), fare_final_usd: order.ride.fare_estimate_usd };
           }
@@ -769,7 +798,7 @@ export const useDispatch = create<DispatchStore>()(
           if (s.mode === 'auto') {
             for (const o of [...orders].reverse()) {
               if (o.status !== 'requested' || o.auto_at == null || o.auto_at > now) continue;
-              const best = bestUnit(o, orders, now);
+              const best = bestUnit(o, orders, now, seedExclude(o));
               if (!best) {
                 // Sin unidades libres: reintenta en un rato (y la alerta hará su trabajo).
                 orders = patchOrder(orders, o.id, (x) => ({ ...x, auto_at: now + 3_000 }));
@@ -837,6 +866,24 @@ export const useDispatch = create<DispatchStore>()(
           for (const a of assigned) dispatchEvents.emit({ type: 'assigned', order: a.order, unit: a.unit, via: a.via });
           for (const o of statusEvents) dispatchEvents.emit({ type: 'status', order: o });
           return { assigned };
+        },
+
+        setLegRoute(orderId, kind, startedAt, route, now = Date.now()) {
+          const order = find(orderId);
+          const leg = order?.[kind];
+          if (!order || !leg || leg.src !== 'pending' || leg.started_at !== startedAt || !isActive(order)) return false;
+          const next: OrderLeg = {
+            ...leg,
+            path: route.path,
+            duration_s: kind === 'approach' ? route.duration_s : leg.duration_s,
+            src: route.source,
+            // El reloj arranca con la ruta (la unidad no avanzó mientras se pedía).
+            started_at: Math.max(leg.started_at, now),
+          };
+          // Atascada mientras se pedía la ruta: sigue detenida, al inicio de la ruta (donde está).
+          const stalled = kind === 'approach' && order.stalled_at != null && order.stalled_at <= now ? { stalled_progress: 0 } : {};
+          set({ orders: patchOrder(get().orders, orderId, (o) => ({ ...o, [kind]: next, ...stalled })) });
+          return true;
         },
 
         selectOrder(id) {

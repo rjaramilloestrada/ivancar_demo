@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { estimateRoute } from '@/lib/routing';
 import { simTimings } from '@/lib/simConfig';
-import { fleetById } from '@/mocks/drivers';
+import { fleetById, LOCAL_UNIT_IDS } from '@/mocks/drivers';
 import type { Ride } from '@/types';
 import {
   computeAlerts,
   computeKpis,
   dispatchEvents,
+  pickupOf,
   rankUnits,
   unitPose,
   unitViews,
@@ -280,5 +281,38 @@ describe('actividad sembrada', () => {
     const k = computeKpis(S());
     expect(k.assignedCount).toBe(1);
     expect(k.avgAssignMs).toBeGreaterThan(T.centralAutoAssignMs - 1);
+  });
+});
+
+describe('flota de zona y rutas por calles', () => {
+  it('los pedidos sembrados no usan las unidades de zona (las que ve el pasajero)', () => {
+    S().seed(T0);
+    let t = T0;
+    for (let i = 0; i < 120; i++) S().tick((t += 500));
+    const used = S().orders.filter((o) => o.source === 'seed' && o.unit_id).map((o) => o.unit_id!);
+    expect(used.length).toBeGreaterThan(2);
+    for (const id of used) expect(LOCAL_UNIT_IDS).not.toContain(id);
+  });
+
+  it('un pedido de la app sí puede ir a una unidad de zona', () => {
+    S().receiveRide(ride(), T0);
+    const ranked = rankUnits(order(), S().orders, T0);
+    expect(ranked.some((c) => LOCAL_UNIT_IDS.includes(c.unit.id))).toBe(true);
+  });
+
+  it('tramo provisional: no avanza hasta tener la ruta; con ella, el reloj arranca', () => {
+    S().seed(T0);
+    const o = S().orders.find((x) => x.source === 'seed' && x.status === 'en_route' && x.stalled_at == null)!;
+    expect(o.approach?.src).toBe('pending');
+    expect(unitPose(o.unit_id!, o, T0 + 1_000).mode).toBe('patrol');
+    const route = { ...estimateRoute([-2.13, -79.86], pickupOf(o)), source: 'osrm' as const };
+    expect(S().setLegRoute(o.id, 'approach', o.approach!.started_at, route, T0 + 1_500)).toBe(true);
+    const next = S().orders.find((x) => x.id === o.id)!;
+    expect(next.approach?.src).toBe('osrm');
+    expect(next.approach?.started_at).toBe(T0 + 1_500);
+    expect(next.approach?.path).toBe(route.path);
+    expect(unitPose(o.unit_id!, next, T0 + 1_600).mode).toBe('approach');
+    // Una respuesta para un tramo que ya cambió se ignora.
+    expect(S().setLegRoute(o.id, 'approach', o.approach!.started_at, route, T0 + 2_000)).toBe(false);
   });
 });

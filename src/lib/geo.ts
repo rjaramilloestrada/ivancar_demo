@@ -234,3 +234,122 @@ export function formatMinutes(minutes: number): string {
 export function formatDuration(seconds: number): string {
   return formatMinutes(seconds / 60);
 }
+
+/* ------------------------------------------------------- Rumbo estable y limpieza */
+
+/** Punto a `d` metros del inicio (sin rumbo). */
+function pointAtDistance(path: readonly LatLng[], cum: readonly number[], d: number): LatLng {
+  const n = path.length;
+  if (n === 1) return path[0];
+  const total = cum[n - 1];
+  const target = Math.min(total, Math.max(0, d));
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (cum[mid] <= target) lo = mid;
+    else hi = mid;
+  }
+  const seg = cum[lo + 1] - cum[lo];
+  return lerpLatLng(path[lo], path[lo + 1], seg > 0 ? (target - cum[lo]) / seg : 0);
+}
+
+/**
+ * Punto y rumbo a una fracción del largo, con el rumbo medido sobre una ventana de
+ * ±`window` metros (no sobre el tramo exacto). Así un tramo diminuto o un quiebre al final
+ * de la ruta no hacen girar el auto, y al llegar (fracción 1) el rumbo es el de los
+ * últimos metros recorridos, no el de un tramo suelto.
+ */
+export function poseOnPath(
+  path: readonly LatLng[],
+  fraction: number,
+  cum: readonly number[] = cumulativeDistances(path),
+  window = 14,
+): { point: LatLng; bearing: number } {
+  const n = path.length;
+  if (n === 0) return { point: [0, 0], bearing: 0 };
+  if (n === 1) return { point: path[0], bearing: 0 };
+  const total = cum[n - 1];
+  const d = Math.min(1, Math.max(0, fraction)) * total;
+  const point = pointAtDistance(path, cum, d);
+  if (total <= 0) return { point, bearing: 0 };
+  const w = Math.min(window, total / 2);
+  let a = d - w;
+  let b = d + w;
+  if (a < 0) {
+    b -= a;
+    a = 0;
+  }
+  if (b > total) {
+    a = Math.max(0, a - (b - total));
+    b = total;
+  }
+  return { point, bearing: bearing(pointAtDistance(path, cum, a), pointAtDistance(path, cum, b)) };
+}
+
+/** Simplificación Douglas-Peucker con tolerancia en metros (proyección local). */
+export function simplifyPath(path: readonly LatLng[], toleranceM = 4): LatLng[] {
+  if (path.length <= 2) return path.slice();
+  const k = Math.cos(toRad(path[0][0]));
+  const xy = path.map(([lat, lng]) => [toRad(lng) * k * R, toRad(lat) * R] as const);
+  const keep = new Uint8Array(path.length);
+  keep[0] = keep[path.length - 1] = 1;
+  const stack: Array<[number, number]> = [[0, path.length - 1]];
+  while (stack.length) {
+    const [s, e] = stack.pop()!;
+    const [x1, y1] = xy[s];
+    const [x2, y2] = xy[e];
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const len2 = dx * dx + dy * dy;
+    let maxD = -1;
+    let idx = -1;
+    for (let i = s + 1; i < e; i++) {
+      const [x, y] = xy[i];
+      let t = len2 > 0 ? ((x - x1) * dx + (y - y1) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      const ex = x1 + t * dx - x;
+      const ey = y1 + t * dy - y;
+      const d = ex * ex + ey * ey;
+      if (d > maxD) {
+        maxD = d;
+        idx = i;
+      }
+    }
+    if (idx > 0 && maxD > toleranceM * toleranceM) {
+      keep[idx] = 1;
+      stack.push([s, idx], [idx, e]);
+    }
+  }
+  return path.filter((_, i) => keep[i]);
+}
+
+/**
+ * Quita los "vaivenes" de una polilínea: tramos en que el recorrido entra a una calle y
+ * vuelve por el mismo camino (un punto que reaparece a menos de `nearM` metros tras un desvío
+ * de `minDetourM`–`maxDetourM` metros). También quita puntos repetidos. No toca el primer ni el último punto.
+ */
+export function removeSpurs(
+  path: readonly LatLng[],
+  { nearM = 9, lookahead = 40, minDetourM = 25, maxDetourM = 600 } = {},
+): LatLng[] {
+  let out = path.filter((p, i) => i === 0 || haversine(p, path[i - 1]) > 0.5);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < out.length - 2 && !changed; i++) {
+      let detour = 0;
+      for (let j = i + 2; j < Math.min(out.length - 1, i + lookahead); j++) {
+        detour += haversine(out[j - 1], out[j]);
+        if (j === i + 2) detour += haversine(out[i], out[i + 1]);
+        if (detour > maxDetourM) break;
+        if (detour >= minDetourM && haversine(out[i], out[j]) < nearM) {
+          out = [...out.slice(0, i + 1), ...out.slice(j + 1)];
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}

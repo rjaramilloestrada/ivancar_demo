@@ -30,7 +30,14 @@ import { ServiceSheet } from './screens/ServiceSheet';
 import { SheetSlotsContext, type SheetSlotElements } from './SheetSlots';
 import { TOP_CHROME, TopBar } from './TopBar';
 import { useMapCamera } from './useMapCamera';
+import { useLocalFleet } from './useLocalFleet';
 import { useRideSimulation } from './useRideSimulation';
+
+/**
+ * Zoom del inicio con recogida: deja ver las unidades cercanas (a ~0,4–0,9 km) alrededor
+ * del pin en un teléfono.
+ */
+const HOME_ZOOM = 15.4;
 
 /** Altura inicial del sheet por paso. */
 const SNAP: Record<Step, SheetSnap> = {
@@ -133,7 +140,7 @@ export default function PassengerApp() {
   // (chunk diferido) exista, se usa como vista inicial.
   const [startView, setStartView] = useState<{ center: LatLng; zoom: number }>(() => ({
     center: pickup ? [pickup.lat, pickup.lng] : mapTokens.defaultCenter,
-    zoom: mapTokens.defaultZoom + (pickup ? 1 : 0),
+    zoom: pickup ? HOME_ZOOM : mapTokens.defaultZoom,
   }));
   // Zoom de entrada desde Guayaquil completo: solo al abrir sin pedido en curso (y no en pruebas).
   const [intro] = useState(() => !pickup && useRide.getState().step === 'home' && !hasSimParam());
@@ -142,6 +149,8 @@ export default function PassengerApp() {
   useEffect(() => {
     void loadMap();
   }, []);
+  // Unidades de zona alrededor de la recogida (mismo plan en la central).
+  useLocalFleet({ pin: pinLL, active: step === 'home' && !pinMoving, centralOnline });
   // El pin solo emite su posición inicial la primera vez (sin recogida guardada).
   const firstPin = useRef(!pickup);
 
@@ -181,8 +190,8 @@ export default function PassengerApp() {
         }
         setGeo('granted');
         if ((!retry && userMoved.current) || useRide.getState().step !== 'home') return;
-        if (mapRef.current) mapRef.current.flyTo(ll, 16);
-        else setStartView({ center: ll, zoom: 16 });
+        if (mapRef.current) mapRef.current.flyTo(ll, HOME_ZOOM);
+        else setStartView({ center: ll, zoom: HOME_ZOOM });
       },
       () => alive.current && setGeo('denied'),
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 },
@@ -220,7 +229,7 @@ export default function PassengerApp() {
     prevStep.current = step;
     if (step === 'home' && from && from !== 'home' && from !== 'history') {
       const p = useRide.getState().pickup;
-      if (p) mapRef.current?.flyTo([p.lat, p.lng], 16);
+      if (p) mapRef.current?.flyTo([p.lat, p.lng], HOME_ZOOM);
     }
   }, [step]);
 

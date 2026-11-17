@@ -2,27 +2,53 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useToast } from '@/components/ui';
 import { track } from '@/lib/analytics';
 import { postMessage, useChannel } from '@/lib/channel';
-import { buildApproach, pickUnit } from '@/lib/dispatch';
-import { simTimings } from '@/lib/simConfig';
-import { fleet } from '@/mocks/drivers';
+import { approachAt, pickUnit, planApproach, unitNow, type PlannedApproach } from '@/lib/dispatch';
+import { poseOnPath } from '@/lib/geo';
+import { SIM_TIMINGS, simTimings } from '@/lib/simConfig';
 import { vibrate } from '@/lib/haptics';
 import { rideEvents, thin, useRide, type AssignedBy } from '@/store/rideStore';
+import type { Route } from '@/lib/routing';
 import type { FleetUnit, LatLng } from '@/types';
 
 /** Pedidos ya anunciados a la central en esta carga de página (evita duplicados). */
 const announced = new Set<string>();
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+/** Tope de la ruta de llegada por OSRM (sin acelerar con `?sim`: es red, no simulación). */
+const ROUTE_TIMEOUT_MS = SIM_TIMINGS.approachRouteTimeoutMs;
+/** Rumbo de salida del viaje (la unidad llega a la recogida mirando hacia allá). */
+function tripStartBearing(): number | undefined {
+  const r = useRide.getState().route;
+  return r && r.source === 'osrm' && r.path.length >= 2 ? poseOnPath(r.path, 0).bearing : undefined;
+}
+
+/** Rutas de llegada preparadas durante la búsqueda (por pedido y unidad). */
+const planned = new Map<string, Promise<PlannedApproach>>();
+
+/**
+ * Ruta de llegada para asignar `unit` ya: la preparada en la búsqueda si sirve; si no, una
+ * nueva desde donde estará la unidad cuando llegue la respuesta.
+ */
+async function approachFor(rideId: string, unit: FleetUnit, pickup: LatLng) {
+  const pre = planned.get(`${rideId}:${unit.id}`);
+  if (pre) {
+    const r = approachAt(await pre, Date.now());
+    if (r) return r;
+  }
+  const fresh = await planApproach(unit, pickup, { at: Date.now() + 900, timeoutMs: ROUTE_TIMEOUT_MS, endBearing: tripStartBearing() });
+  return approachAt(fresh, Date.now()) ?? fresh.route;
+}
 const nowIso = () => new Date().toISOString();
 
 /** Reloj y ruta de la fase actual, para que la central mueva la unidad igual que el pasajero. */
-function phaseInfo(path: LatLng[] | undefined) {
+function phaseInfo(route: Route | null | undefined) {
   const s = useRide.getState();
   return {
     driver_id: s.unit?.id,
     phase_started_at: s.phaseStartedAt ?? undefined,
     phase_ms: s.phaseDurationMs ?? undefined,
-    path: path ? thin(path, 120) : undefined,
+    path: route ? thin(route.path, 160) : undefined,
+    path_source: route?.source,
   };
 }
 
@@ -79,7 +105,7 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
               status: 'en_route',
               eta_s: e.approach.duration_s,
               at: nowIso(),
-              ...phaseInfo(e.approach.path),
+              ...phaseInfo(e.approach),
             });
             track('ride_assigned', { by: e.by, service: e.ride.service_id });
             break;
@@ -92,7 +118,7 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
               status: 'en_route',
               eta_s: approach?.duration_s,
               at: nowIso(),
-              ...phaseInfo(approach?.path),
+              ...phaseInfo(approach),
             });
             track('ride_reassigned', { service: e.ride.service_id });
             break;
@@ -107,7 +133,7 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
               ride_id: e.ride.id,
               status: 'in_trip',
               at: nowIso(),
-              ...phaseInfo(useRide.getState().route?.path),
+              ...phaseInfo(useRide.getState().route),
             });
             track('trip_started');
             break;
@@ -137,10 +163,13 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
     const id = s.ride.id;
     assigning.current = id;
     const T = simTimings();
-    const approach = await buildApproach(unit, [s.pickup.lat, s.pickup.lng], T.approachRouteTimeoutMs);
+    const pickup: LatLng = [s.pickup.lat, s.pickup.lng];
+    // La búsqueda se ve al menos `searchMinMs`; la ruta se empalma al momento de asignar.
     await sleep((s.phaseStartedAt ?? Date.now()) + T.searchMinMs - Date.now());
+    const approach = await approachFor(id, unit, pickup);
     const cur = useRide.getState();
-    if (cur.step === 'searching' && cur.ride?.id === id) cur.assignUnit(unit, approach, by);
+    // La unidad, con su posición real al asignar (la misma que dibujan pasajero y central).
+    if (cur.step === 'searching' && cur.ride?.id === id) cur.assignUnit(unitNow(unit), approach, by);
     assigning.current = null;
   }, []);
 
@@ -155,12 +184,20 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
     }
     const pickup: LatLng = [s.pickup.lat, s.pickup.lng];
     const T = simTimings();
-    const candidate = pickUnit(s.serviceId, pickup) ?? fleet[0];
-    void buildApproach(candidate, pickup, T.approachRouteTimeoutMs); // queda en caché de rutas
     // Central en modo manual: el operador tiene más tiempo antes de la autoasignación.
     const wait = centralMode === 'manual' ? T.searchManualTimeoutMs : centralOnline || centralMode ? T.searchCentralTimeoutMs : T.searchAutoMs;
     const deadline = (s.phaseStartedAt ?? Date.now()) + wait;
-    const t = setTimeout(() => void assign(candidate, 'auto'), Math.max(0, deadline - Date.now()));
+    // Candidato: la unidad visible más cercana del tipo correcto, con su posición de ahora.
+    // Su ruta se prepara ya, desde donde estará al vencer la espera (una sola petición).
+    const candidate = pickUnit(s.serviceId, pickup);
+    const k = candidate ? `${rideId}:${candidate.id}` : '';
+    if (candidate && !planned.has(k) && centralMode !== 'manual') {
+      planned.set(k, planApproach(candidate, pickup, { at: Math.max(Date.now() + 1_000, deadline + 400), timeoutMs: ROUTE_TIMEOUT_MS, endBearing: tripStartBearing() }));
+    }
+    const t = setTimeout(() => {
+      const unit = candidate ?? pickUnit(s.serviceId, pickup);
+      if (unit) void assign(unit, 'auto');
+    }, Math.max(0, deadline - Date.now()));
     return () => clearTimeout(t);
   }, [step, rideId, centralOnline, centralMode, assign]);
 
@@ -176,8 +213,8 @@ export function useRideSimulation({ centralOnline }: { centralOnline: boolean })
         void assign(m.unit, 'central');
       } else if (m.type === 'ride:reassigned' && s.step === 'assigned' && s.pickup) {
         const unit = m.unit;
-        void buildApproach(unit, [s.pickup.lat, s.pickup.lng], simTimings().approachRouteTimeoutMs).then((approach) => {
-          if (useRide.getState().reassignUnit(unit, approach)) {
+        void approachFor(s.ride.id, unit, [s.pickup.lat, s.pickup.lng]).then((approach) => {
+          if (useRide.getState().reassignUnit(unitNow(unit), approach)) {
             toast.show({
               id: 'reassigned',
               tone: 'warning',

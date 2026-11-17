@@ -42,7 +42,7 @@ y salta lo que es solo presentación (splash y vuelo de entrada del mapa).
 |---|---|
 | Mapa y calles (OpenFreeMap, datos OSM) | Conductores, placas y vehículos (ficticios) |
 | Geolocalización, si el usuario da permiso (si no, Samborondón) | Movimiento de las unidades y de la flota |
-| Ruta por calles con OSRM público (si no responde, ruta estimada) | Asignación, llegada y viaje (tiempos comprimidos: P1 → P8 en unos 40 s) |
+| Ruta por calles con OSRM público (si no responde, ruta estimada) | Asignación, llegada y viaje (tiempos comprimidos: llegada ~30 s, viaje ~45 s; P1 → P8 en ~1 min 30 s) |
 | Dirección del pin con Nominatim (si no responde, el lugar conocido más cercano) | Tarifas: fórmula de ejemplo, siempre marcada "Tarifa referencial de demo" |
 | "Llamar" abre `tel:0980100100`; "Compartir viaje" y el respaldo abren WhatsApp con texto prellenado | Chat con el conductor (respuestas automáticas) y botón de emergencia |
 | Instalación como PWA y uso sin red del shell | Central de despacho, pedidos sembrados y alertas |
@@ -51,7 +51,7 @@ y salta lo que es solo presentación (splash y vuelo de entrada del mapa).
 Nada se envía a un servidor propio. Meta Pixel y GA4 solo se cargan si hay IDs en `.env.local`
 (ver "Analítica").
 
-## Guion de demostración (60 segundos)
+## Guion de demostración (unos 90 segundos)
 
 Abrir `#/demo` en una pantalla grande (o `#/` en el teléfono y `#/central` en otra pestaña del mismo navegador).
 
@@ -61,11 +61,12 @@ Abrir `#/demo` en una pantalla grande (o `#/` en el teléfono y `#/central` en o
    al cambiar de servicio el brillo se desliza y el precio cuenta. "Precio y tiempo antes de pedir."
 3. **15–20 s.** "Pedir Taxi normal". En el teléfono, radar sobre la recogida y unidades evaluadas;
    en la central, el pedido entra arriba con brillo amarillo y la central lo asigna sola.
-4. **20–35 s.** Unidad asignada: conductor, placa grande, ETA que baja sin saltos, el auto acercándose.
-   Tocar "Compartir viaje" (abre WhatsApp con conductor, placa y destino). En la central, la misma placa.
-5. **35–45 s.** "Tu IVANCAR llegó" (aviso con la placa y vibración en Android). Empieza el viaje:
-   tiempo restante, compartir ubicación y botón de emergencia (simulado).
-6. **45–60 s.** Calificar con 5 estrellas: confetti amarillo y el viaje queda en "Mis viajes" con su mini mapa.
+4. **20–50 s.** Unidad asignada (una de las que se veían cerca, que sale desde donde estaba): conductor,
+   placa grande, ETA que baja sin saltos, el auto acercándose por calles. Tocar "Compartir viaje"
+   (abre WhatsApp con conductor, placa y destino). En la central, la misma placa en el mismo lugar.
+5. **50–95 s.** "Tu IVANCAR llegó" (aviso con la placa y vibración en Android). Empieza el viaje:
+   tiempo y kilómetros restantes, compartir ubicación y botón de emergencia (simulado).
+6. **Al final.** Calificar con 5 estrellas: confetti amarillo y el viaje queda en "Mis viajes" con su mini mapa.
    Cerrar en la central: alerta pulsando en un pedido que no avanza y "Reasignar ya". "Ningún pedido se pierde."
 
 "Reiniciar demo" (en `#/demo`) deja los dos lados como nuevos.
@@ -95,7 +96,9 @@ Pages solo está disponible en repositorios públicos o con un plan de pago de G
   gratuito y sin SLA. MapLibre pesa ~290 kB gzip (más ~150 kB del worker), en un chunk diferido.
   Las teselas vistas quedan en caché 14 días.
 - **OSRM y Nominatim** son servicios públicos de demostración, sin garantía de disponibilidad ni de
-  uso intensivo. Si fallan, la app usa ruta estimada y el lugar conocido más cercano, sin bloquear el pedido.
+  uso intensivo. La app pide poco (caché, como mucho 2 peticiones a la vez y 350 ms entre una y otra) y
+  tras 3 fallos seguidos deja de llamar a OSRM 60 s. Si fallan, usa ruta estimada y el lugar conocido
+  más cercano, sin bloquear el pedido.
 - Sin red, el shell abre y el pedido se simula igual, pero el mapa solo muestra lo que ya estaba en caché.
 - El prompt de instalación propio aparece después del primer viaje completo: en Android solo si el
   navegador ofrece la instalación (`beforeinstallprompt`), y en iPhone como instrucciones de Safari.
@@ -132,8 +135,16 @@ Chat con el conductor (`ChatPanel.tsx` + `chat/chatStore.ts`): diálogo nativo c
 según el momento del viaje (ya voy, ¿dónde estás?, estoy afuera), "escribiendo…", respuestas rápidas,
 hora por mensaje, no leídos en el botón "Chat" y limpieza al terminar o cancelar el viaje.
 
-Tiempos de la simulación en `src/lib/simConfig.ts` (P1 → P8 en ~40 s). Para acelerar en pruebas:
-`#/?sim=4` divide todos los tiempos entre 4 (rango 1–20).
+Tiempos de la simulación en `src/lib/simConfig.ts` (llegada ~30 s, viaje ~45 s). El auto arranca y
+frena suave, y ETA, kilómetros restantes y posición salen del mismo avance. Para acelerar en pruebas
+o grabar: `#/?sim=4` divide todos los tiempos entre 4 (rango 1–20).
+
+**Flota.** Un solo reloj (`src/lib/fleetSim.ts`) para pasajero y central: cada unidad libre está donde
+dice la hora. Al fijar la recogida, `src/lib/localFleet.ts` arma dos circuitos por calles alrededor
+(OSRM, 2–4 peticiones por zona, con caché) y reparte en ellos 6 unidades de zona de varios tipos
+(4–6 a 0,4–1,8 km); el plan se publica a la central por el canal (`fleet:plan`). Sin OSRM usa el
+circuito incluido más cercano o, si no hay, circuitos estimados. La unidad asignada es una de las
+visibles y su ruta de llegada (OSRM, con su rumbo) empieza donde estaba al asignar.
 
 Con la central abierta en otra pestaña del mismo navegador (`#/central`) o en `#/demo`, el pedido
 llega por BroadcastChannel y la central asigna; sin central, la app se autoasigna la unidad más cercana.
@@ -165,7 +176,8 @@ estado en `src/store/dispatchStore.ts` (separado del pasajero, sessionStorage `i
 - **Cola de pedidos en vivo** (`OrdersList.tsx`, `OrderCard.tsx`): los nuevos entran arriba; origen,
   destino, servicio, pago, hora, cronómetro de espera y estado con color. Filtros: Todos, Sin asignar,
   En curso, Cerrados. Teclado: flechas recorren la cola, Enter abre el detalle.
-- **Mapa de flota** (`FleetMap.tsx`, `FleetUnitsLayer.tsx`): 14 unidades movidas de forma imperativa
+- **Mapa de flota** (`FleetMap.tsx`, `FleetUnitsLayer.tsx`): 20 unidades (14 de la flota general y 6
+  de zona, que patrullan cerca del pasajero y no se usan para los pedidos simulados) movidas de forma imperativa
   (sin renders por frame), libres / ocupadas / en pedido; elegir un pedido encuadra recogida, destino,
   unidad y ruta; elegir una unidad muestra conductor, placa, vehículo y estado.
 - **Asignación** automática a la unidad libre más cercana del tipo correcto (reglas de `lib/dispatch.ts`)
@@ -207,9 +219,11 @@ node scripts/e2e-passenger.mjs --only=full,central --shots=/tmp/capturas
 
 `scripts/e2e-passenger.mjs` usa Playwright con Chromium (local o global). Levanta `vite preview` si
 no está corriendo y lo detiene al terminar. Escenarios: `full` (tiempos reales: toques hasta pedir,
-P1 → P8 < 60 s, hrefs de llamar, WhatsApp y compartir), `options`, `cancel-search`,
-`cancel-assigned`, `geo`, `osrm-blocked`, `reduced`, `reload`, `central`, `no-central`, `history`
-(Mis viajes: estado vacío, detalle, "Repetir viaje"), `chat`, `sizes` (360×740, 390×844 y 430×932,
+P1 → P8 < 100 s, ETA leído cada segundo sin subir ni saltar más de 1 min, hrefs de llamar, WhatsApp
+y compartir), `options`, `cancel-search`, `cancel-assigned`, `geo`, `osrm-blocked`, `reduced`, `reload`,
+`central`, `no-central`, `history` (Mis viajes: estado vacío, detalle, "Repetir viaje"), `chat`,
+`fleet` (Urdesa, Samborondón y Vía a la Costa: ≥ 3 autos a la vista, circuitos OSRM, la unidad
+asignada estaba a la vista y su llegada arranca donde estaba), `sizes` (360×740, 390×844 y 430×932,
 incluido que Llamar / Chat / Cancelar de "Unidad asignada" quedan completos sobre el pie fijo).
 
 `scripts/e2e-central.mjs` abre pasajero (390×844) y central (1440×900) en dos páginas del mismo contexto.

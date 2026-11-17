@@ -1,9 +1,10 @@
 /**
  * Tiempos de la simulación del pedido (un solo lugar para ajustarlos).
  *
- * El demo comprime el tiempo: el auto tarda ~13 s en llegar y ~16 s en hacer el viaje,
+ * El demo comprime el tiempo: el auto tarda ~30 s en llegar y ~45 s en hacer el viaje,
  * mientras la pantalla muestra minutos creíbles calculados con la ruta real (OSRM o
- * estimada). Así el recorrido P1 → P8 completo cabe en menos de 60 s.
+ * estimada), que bajan de forma continua con el avance del auto. El recorrido P1 → P8
+ * completo toma algo menos de 1 min 30 s.
  *
  * Para pruebas: `?sim=4` en la URL (antes o después del `#`) divide todos los tiempos
  * entre 4 (rango 1–20). Ej.: `/ivancar_demo/#/?sim=6`.
@@ -18,11 +19,11 @@ export const SIM_TIMINGS = {
   /** Tope para conseguir la ruta de la unidad a la recogida (OSRM) antes de usar la estimada. */
   approachRouteTimeoutMs: 1_600,
   /** Recorrido de la unidad hasta la recogida. */
-  approachMs: 13_000,
+  approachMs: 30_000,
   /** Pausa con "Tu IVANCAR llegó" antes de empezar el viaje. */
   arrivedPauseMs: 2_600,
   /** Recorrido de la recogida al destino. */
-  tripMs: 16_000,
+  tripMs: 45_000,
 
   /* ------------------------------------------------ Central (Bloque 4) */
   /** Con la central en modo manual: el pasajero espera al operador hasta X ms y luego se autoasigna. */

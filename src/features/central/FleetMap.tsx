@@ -1,9 +1,9 @@
 import L from 'leaflet';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Marker, Polyline } from 'react-leaflet';
 import { DestinationMarker, MapView, PickupMarker, RouteLine, type MapViewHandle, type RouteLineHandle } from '@/components/map';
 import { onTick } from '@/components/map/ticker';
-import { estimateRoute } from '@/lib/routing';
+import { getRoute, type Route } from '@/lib/routing';
 import { simTimings } from '@/lib/simConfig';
 import {
   approachProgress,
@@ -113,11 +113,20 @@ function OrderRoutesLayer() {
       {active.map((o) => {
         if (o.id === selectedOrderId) return null;
         const leg = o.status === 'in_trip' ? o.trip : o.status === 'assigned' || o.status === 'en_route' ? o.approach : null;
-        return leg ? (
+        // Un tramo provisional (ruta pedida, aún sin respuesta) no se dibuja.
+        return leg && leg.src !== 'pending' ? (
           <Polyline
-            key={`faint-${o.id}-${leg.started_at}`}
+            key={`faint-${o.id}-${leg.started_at}-${leg.path.length}`}
             positions={leg.path}
-            pathOptions={{ color: o.status === 'in_trip' ? '#3DDC84' : '#F6C90E', weight: 3, opacity: 0.32, interactive: false, lineCap: 'round', lineJoin: 'round' }}
+            pathOptions={{
+              color: o.status === 'in_trip' ? '#3DDC84' : '#F6C90E',
+              weight: 3,
+              opacity: 0.32,
+              interactive: false,
+              lineCap: 'round',
+              lineJoin: 'round',
+              className: `iv-leg iv-leg--${leg.src ?? 'osrm'}`,
+            }}
           />
         ) : null;
       })}
@@ -149,11 +158,22 @@ function RequestMarker({ order, alert, onSelect }: { order: DispatchOrder; alert
 /** Pedido elegido: su ruta (con el tramo recorrido atenuado), recogida y destino. */
 function SelectedOrderLayer({ order }: { order: DispatchOrder }) {
   const lineRef = useRef<RouteLineHandle>(null);
-  const leg = order.status === 'in_trip' ? order.trip : order.status === 'assigned' || order.status === 'en_route' ? order.approach : null;
-  const preview = useMemo(
-    () => (order.status === 'requested' || order.status === 'assigned' || order.status === 'en_route' || order.status === 'arrived' ? estimateRoute(pickupOf(order), dropoffOf(order)).path : null),
-    [order.id, order.status],
-  );
+  const rawLeg = order.status === 'in_trip' ? order.trip : order.status === 'assigned' || order.status === 'en_route' ? order.approach : null;
+  const leg = rawLeg && rawLeg.src !== 'pending' ? rawLeg : null;
+  // Vista previa del viaje (recogida → destino) por calles: OSRM con caché; la curva
+  // estimada solo si OSRM no responde. Mientras llega, no se dibuja nada.
+  const wantsPreview = order.status === 'requested' || order.status === 'assigned' || order.status === 'en_route' || order.status === 'arrived';
+  const [preview, setPreview] = useState<Route | null>(null);
+  useEffect(() => {
+    if (!wantsPreview) return;
+    const ctrl = new AbortController();
+    getRoute(pickupOf(order), dropoffOf(order), { signal: ctrl.signal, timeoutMs: 2500 })
+      .then(setPreview)
+      .catch(() => {
+        /* abortada: cambió el pedido */
+      });
+    return () => ctrl.abort();
+  }, [order.id, wantsPreview]);
   const orderRef = useRef(order);
   orderRef.current = order;
 
@@ -173,13 +193,24 @@ function SelectedOrderLayer({ order }: { order: DispatchOrder }) {
 
   return (
     <>
-      {preview && (
+      {wantsPreview && preview && (
         <Polyline
-          positions={preview}
-          pathOptions={{ color: '#FFFFFF', weight: 2.5, opacity: 0.45, dashArray: '2 8', interactive: false, lineCap: 'round' }}
+          key={`preview-${preview.source}`}
+          positions={preview.path}
+          pathOptions={{
+            color: '#FFFFFF',
+            weight: 2.5,
+            opacity: 0.45,
+            dashArray: '2 8',
+            interactive: false,
+            lineCap: 'round',
+            className: `iv-preview iv-preview--${preview.source}`,
+          }}
         />
       )}
-      {leg && isActive(order) && <RouteLine key={`sel-${leg.started_at}-${leg.path.length}`} ref={lineRef} path={leg.path} />}
+      {leg && isActive(order) && (
+        <RouteLine key={`sel-${leg.started_at}-${leg.path.length}`} ref={lineRef} path={leg.path} className={`iv-leg iv-leg--${leg.src ?? 'osrm'}`} />
+      )}
       <PickupMarker position={pickupOf(order)} label={order.ride.pickup_label} />
       <DestinationMarker position={dropoffOf(order)} label={order.ride.dropoff_label} />
     </>
